@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Expedientes — Gesios del Levante</title>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--blue:#1A56A0;--blue-light:#E6F1FB;--blue-mid:#378ADD;--blue-dark:#0C447C;--side:200px;
+--bg:#F5F5F3;--bg2:#EEECEA;--bg3:#E6E4E0;--border:#D8D6D0;--text:#1A1917;--text2:#706E69;--text3:#9D9B96;
+--radius:8px;--radius-lg:12px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.app{display:flex;min-height:100vh}
+.sidebar{width:var(--side);background:var(--blue-dark);display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:100vh}
+.sidebar-logo{padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,0.1)}
+.logo-icon{width:30px;height:30px;background:var(--blue-mid);border-radius:7px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;font-size:16px}
+.company{font-size:12px;font-weight:500;color:#fff}
+.subtitle{font-size:10px;color:rgba(255,255,255,0.5);margin-top:1px}
+.nav-section{padding:10px 0}
+.nav-label{font-size:10px;font-weight:500;color:rgba(255,255,255,0.35);padding:0 14px 5px;letter-spacing:.06em;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:9px;padding:7px 14px;cursor:pointer;color:rgba(255,255,255,0.65);font-size:12px;border-left:2px solid transparent;transition:all .12s;user-select:none}
+.nav-item:hover{background:rgba(255,255,255,0.07);color:#fff}
+.nav-item.active{background:rgba(255,255,255,0.11);color:#fff;border-left-color:#85B7EB}
+.nav-badge{margin-left:auto;background:rgba(255,255,255,0.13);color:rgba(255,255,255,0.75);font-size:10px;padding:1px 5px;border-radius:8px}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{background:#fff;border-bottom:1px solid var(--border);padding:11px 18px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
+.topbar h1{font-size:15px;font-weight:500;flex:1}
+.user-info{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)}
+.user-avatar{width:28px;height:28px;border-radius:50%;background:var(--blue-light);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:var(--blue-dark)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:var(--radius);font-size:12px;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--text);font-family:inherit;transition:background .12s}
+.btn:hover{background:var(--bg)}
+.btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn-primary:hover{background:var(--blue-dark)}
+.btn-danger{background:#FCEBEB;border-color:#E24B4A;color:#791F1F}
+.content{flex:1;padding:18px;overflow-y:auto;min-width:0}
+.view{display:none}
+.view.active{display:block}
+
+/* LOGIN */
+.login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
+.login-box{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:40px;text-align:center;width:360px}
+.login-logo{width:56px;height:56px;background:var(--blue-dark);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:24px}
+.login-box h2{font-size:18px;font-weight:500;margin-bottom:6px}
+.login-box p{font-size:13px;color:var(--text2);margin-bottom:24px}
+.login-box .btn-primary{width:100%;justify-content:center;padding:10px;font-size:14px}
+
+/* CARDS */
+.card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:14px}
+.card-header{padding:12px 16px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--border)}
+.card-header h2{font-size:13px;font-weight:500;flex:1}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:7px 14px;font-size:11px;font-weight:500;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg)}
+td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg)}
+.badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:8px;font-size:11px;font-weight:500}
+.b-blue{background:#E6F1FB;color:#0C447C}
+.b-green{background:#EAF3DE;color:#27500A}
+.b-amber{background:#FAEEDA;color:#633806}
+.b-gray{background:#F1EFE8;color:#444441}
+.b-teal{background:#E1F5EE;color:#085041}
+.b-red{background:#FCEBEB;color:#791F1F}
+.b-purple{background:#F0EAFA;color:#4A1D8F}
+.row-act{color:var(--text2);cursor:pointer;font-size:14px;padding:3px 4px;border-radius:4px;border:none;background:none;font-family:inherit}
+.row-act:hover{background:var(--bg);color:var(--text)}
+.search-box{display:flex;align-items:center;gap:5px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:5px 9px}
+.search-box input{background:none;border:none;outline:none;font-size:12px;color:var(--text);font-family:inherit;width:160px}
+
+/* ALTA */
+.alta-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:16px;align-items:start}
+.form-section{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px}
+.form-section h3{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:14px;display:flex;align-items:center;gap:7px}
+.form-section h3 span{font-size:15px;color:var(--blue)}
+.field{margin-bottom:12px}
+.field label{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;margin-bottom:4px}
+.req{color:#A32D2D;font-size:12px}
+.field input,.field select,.field textarea{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;font-family:inherit;background:#fff;color:var(--text);transition:border-color .15s}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--blue-mid)}
+.field textarea{min-height:60px;resize:vertical}
+.field input.error,.field select.error{border-color:#E24B4A;background:#FCEBEB}
+.field .error-msg{font-size:10px;color:#A32D2D;margin-top:3px;display:none}
+.field.has-error .error-msg{display:block}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.catastro-btn{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--blue-light);border:1px solid var(--blue-mid);border-radius:var(--radius);cursor:pointer;font-size:12px;color:var(--blue-dark);margin-top:6px;text-decoration:none}
+.catastro-btn:hover{background:#d0e6f7}
+.catastro-btn .ref-tag{margin-left:auto;font-size:10px;color:var(--blue-mid);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* PANEL DERECHO */
+.flow-panel{position:sticky;top:70px;min-width:0}
+.flow-steps{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:12px}
+.flow-steps h3,.ruta-box h3{font-size:10px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+.step-item{display:flex;align-items:flex-start;gap:9px;padding:6px 0;border-bottom:1px solid var(--border)}
+.step-item:last-child{border-bottom:none;padding-bottom:0}
+.step-num{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;flex-shrink:0;background:var(--bg);color:var(--text2);border:1px solid var(--border)}
+.step-num.active{background:var(--blue-light);color:var(--blue-dark);border-color:var(--blue-mid)}
+.step-num.done{background:#EAF3DE;color:#27500A;border-color:#C0DD97}
+.sname{font-size:11px;font-weight:500}
+.sdesc{font-size:10px;color:var(--text2)}
+.ruta-box{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px}
+.ruta-path-wrap{background:var(--bg);border-radius:var(--radius);padding:8px 10px;margin-bottom:10px}
+.ruta-line{font-family:'Courier New',monospace;font-size:10px;color:var(--text2);word-break:break-all;line-height:1.6}
+.ruta-line .ok{color:var(--blue-dark);font-weight:500}
+.ruta-line .pend{color:#854F0B;font-style:italic}
+.subs{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin-bottom:10px}
+.sub-item{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);padding:2px 0}
+.chk-list{border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:4px}
+.chk{display:flex;align-items:center;gap:6px;font-size:11px}
+.chk.ok{color:var(--text2)}
+.chk.ok .chk-dot{background:#3B6D11}
+.chk.pend{color:#854F0B}
+.chk.pend .chk-dot{background:#854F0B}
+.chk-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.chk .chk-val{font-size:10px;color:var(--text2);margin-left:auto;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* STATS */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.stat-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.stat-card .lbl{font-size:11px;color:var(--text2);margin-bottom:4px}
+.stat-card .val{font-size:20px;font-weight:500}
+
+/* DETALLE */
+.detalle-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;padding:16px}
+.det-field label{font-size:11px;color:var(--text2);display:block;margin-bottom:3px}
+.det-field p{font-size:13px}
+.fases-row{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 16px}
+.fase-chip{padding:6px 10px;border-radius:var(--radius);font-size:11px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;transition:all .15s}
+.fase-chip.done{background:#EAF3DE;border-color:#C0DD97;color:#27500A}
+.fase-chip.current{background:var(--blue-light);border-color:var(--blue-mid);color:var(--blue-dark);font-weight:500}
+
+/* BUSQUEDA */
+.busq-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ref-result{background:var(--bg);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;border:1px solid var(--border)}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;right:20px;background:#1A1917;color:#fff;padding:10px 16px;border-radius:var(--radius);font-size:12px;z-index:1000;display:none;align-items:center;gap:8px;max-width:320px}
+.toast.show{display:flex}
+.toast.success{background:#1A4D1A}
+.toast.error{background:#4D1A1A}
+
+/* LOADING */
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text2);font-size:13px;gap:10px}
+.spinner{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen" class="login-screen">
+  <div class="login-box">
+    <div class="login-logo">📁</div>
+    <h2>Gesios del Levante</h2>
+    <p>Gestión de expedientes<br>Accede con tu cuenta Microsoft</p>
+    <button class="btn btn-primary" onclick="login()">Iniciar sesión con Microsoft</button>
+    <p id="login-error" style="color:#A32D2D;font-size:11px;margin-top:12px;display:none"></p>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app-screen" class="app" style="display:none">
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📁</div>
+      <div class="company">Gesios del Levante</div>
+      <div class="subtitle">Expedientes</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Principal</div>
+      <div class="nav-item" onclick="nav('dashboard')">🏠 Resumen</div>
+      <div class="nav-item active" onclick="nav('alta')">📂 Nuevo expediente</div>
+      <div class="nav-item" onclick="nav('expedientes')">🗂 Expedientes <span class="nav-badge" id="badge-exp">—</span></div>
+      <div class="nav-item" onclick="nav('busqueda')">🔍 Buscar catastro</div>
+    </div>
+    <div class="nav-section" style="border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;margin-top:auto">
+      <div class="nav-item" id="btn-logout" onclick="logout()">🚪 Cerrar sesión</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <h1 id="topbar-title">Nuevo expediente</h1>
+      <div class="user-info">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span id="user-name">Cargando...</span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div id="view-dashboard" class="view">
+        <div class="stats-row">
+          <div class="stat-card"><div class="lbl">Total expedientes</div><div class="val" id="stat-total" style="color:var(--blue)">—</div></div>
+          <div class="stat-card"><div class="lbl">Para visitar</div><div class="val" id="stat-visitar">—</div></div>
+          <div class="stat-card"><div class="lbl">En ejecución</div><div class="val" id="stat-ejecucion">—</div></div>
+          <div class="stat-card"><div class="lbl">Pendiente factura</div><div class="val" id="stat-factura">—</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">🗂 <h2>Últimos expedientes</h2><button class="btn" onclick="nav('expedientes')">Ver todos</button></div>
+          <div id="dashboard-tabla"><div class="loading"><div class="spinner"></div>Cargando...</div></div>
+        </div>
+      </div>
+
+      <!-- ALTA -->
+      <div id="view-alta" class="view active">
+        <div class="alta-layout">
+          <div>
+            <div class="form-section">
+              <h3><span>👤</span> Datos del encargo</h3>
+              <div class="field-row">
+                <div class="field"><label>Número de expediente</label><input type="text" id="f-num" readonly style="background:var(--bg)"></div>
+                <div class="field"><label>Fecha de entrada</label><input type="date" id="f-fecha" oninput="actualizar()"></div>
+              </div>
+              <div class="field" id="field-cliente">
+                <label>Cliente <span class="req">*</span></label>
+                <input type="text" id="f-cliente" placeholder="Nombre del cliente" oninput="actualizar()">
+                <div class="error-msg">Introduce el nombre del cliente</div>
+              </div>
+              <div class="field" id="field-desc">
+                <label>Descripción de la obra <span class="req">*</span></label>
+                <input type="text" id="f-desc" placeholder="Ej: Desbroce parcela calle Mayor" oninput="actualizar()">
+                <div class="error-msg">Introduce una descripción</div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <h3><span>🗺</span> Referencia catastral</h3>
+              <div class="field-row">
+                <div class="field" id="field-ref">
+                  <label>Referencia catastral <span class="req">*</span></label>
+                  <input type="text" id="f-ref" placeholder="Ej: 46230A006000380000XJ" oninput="actualizar()" style="font-family:monospace;font-size:12px">
+                  <div class="error-msg">Introduce la referencia catastral</div>
+                </div>
+                <div class="field">
+                  <label>Municipio</label>
+                  <input type="text" id="f-muni" placeholder="Estivella" oninput="actualizar()">
+                </div>
+              </div>
+              <a class="catastro-btn" href="#" onclick="abrirCatastro();return false;">
+                🔗 Consultar en Sede Electrónica del Catastro
+                <span class="ref-tag" id="ref-tag">Introduce la referencia</span>
+              </a>
+            </div>
+
+            <div class="form-section">
+              <h3><span>📅</span> Visita</h3>
+              <div class="field-row">
+                <div class="field"><label>Fecha visita prevista</label><input type="date" id="f-visita"></div>
+                <div class="field"><label>Técnico responsable</label>
+                  <select id="f-tecnico">
+                    <option value="">— Asignar —</option>
+                    <option>Almudena Rubio</option>
+                    <option>Sandra Motos</option>
+                    <option>Gerente</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field"><label>Notas previas</label><textarea id="f-notas" placeholder="Observaciones del email del cliente, condiciones de acceso..."></textarea></div>
+            </div>
+
+            <div class="form-section">
+              <h3><span>🧾</span> Facturación</h3>
+              <div class="field"><label>Tipo de facturación</label>
+                <select id="f-factura">
+                  <option>Factura directa desde ClassicGes</option>
+                  <option>Anotación en Excel (factura mensual agrupada)</option>
+                  <option>Subida a aplicación web del cliente</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
+              <span id="validacion-msg" style="font-size:11px;color:#A32D2D;display:none">⚠ Rellena los campos obligatorios (*)</span>
+              <button class="btn" onclick="nav('expedientes')">Cancelar</button>
+              <button class="btn btn-primary" id="btn-guardar" onclick="guardarExpediente()">📂 Crear expediente</button>
+            </div>
+          </div>
+
+          <div class="flow-panel">
+            <div class="flow-steps">
+              <h3>Fases del expediente</h3>
+              <div class="step-item"><div class="step-num active">1</div><div><div class="sname">Alta y catastro</div><div class="sdesc">Email + consulta catastro</div></div></div>
+              <div class="step-item"><div class="step-num">2</div><div><div class="sname">Visita</div><div class="sdesc">Fotos iniciales</div></div></div>
+              <div class="step-item"><div class="step-num">3</div><div><div class="sname">Presupuesto</div><div class="sdesc">ClassicGes + envío</div></div></div>
+              <div class="step-item"><div class="step-num">4</div><div><div class="sname">Aprobación</div><div class="sdesc">Aceptado → agenda</div></div></div>
+              <div class="step-item"><div class="step-num">5</div><div><div class="sname">Ejecución</div><div class="sdesc">Fotos durante y final</div></div></div>
+              <div class="step-item"><div class="step-num">6</div><div><div class="sname">Facturación</div><div class="sdesc">Desde ClassicGes</div></div></div>
+            </div>
+            <div class="ruta-box">
+              <h3>Carpeta que se creará</h3>
+              <div class="ruta-path-wrap">
+                <div class="ruta-line" id="ruta-l1">Z:\DATOS\<span class="pend">cliente</span>\</div>
+                <div class="ruta-line" id="ruta-l2" style="padding-left:10px">OBRAS 2026\<span class="pend">expediente</span>\</div>
+              </div>
+              <div class="subs">
+                <div class="sub-item">📁 01_Catastro</div>
+                <div class="sub-item">📁 02_Email_Cliente</div>
+                <div class="sub-item">📁 03_Fotos_Inicial</div>
+                <div class="sub-item">📁 04_Presupuesto</div>
+                <div class="sub-item">📁 05_Fotos_Durante</div>
+                <div class="sub-item">📁 06_Fotos_Final</div>
+                <div class="sub-item" style="grid-column:1/-1">📁 07_Factura</div>
+              </div>
+              <div class="chk-list">
+                <div class="chk pend" id="chk-cliente"><span class="chk-dot"></span><span>Cliente</span><span class="chk-val">Sin rellenar</span></div>
+                <div class="chk pend" id="chk-desc"><span class="chk-dot"></span><span>Descripción</span><span class="chk-val">Sin rellenar</span></div>
+                <div class="chk pend" id="chk-ref"><span class="chk-dot"></span><span>Ref. catastral</span><span class="chk-val">Sin rellenar</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EXPEDIENTES -->
+      <div id="view-expedientes" class="view">
+        <div class="card">
+          <div class="card-header">🗂 <h2>Todos los expedientes</h2>
+            <div style="display:flex;gap:8px;margin-left:auto">
+              <div class="search-box">🔍 <input type="text" id="exp-search" placeholder="Buscar..." oninput="filtrarExpedientes()"></div>
+              <button class="btn btn-primary" onclick="nav('alta')">📂 Nuevo</button>
+            </div>
+          </div>
+          <div id="exp-tabla"><div class="loading"><div class="spinner"></div>Cargando...</div></div>
+        </div>
+      </div>
+
+      <!-- BUSQUEDA CATASTRAL -->
+      <div id="view-busqueda" class="view">
+        <div class="busq-layout">
+          <div>
+            <div class="form-section">
+              <h3><span>🔍</span> Buscar por referencia catastral</h3>
+              <div class="field"><label>Referencia catastral</label>
+                <input type="text" id="busq-ref" placeholder="Ej: 46230B001000120000ZA" style="font-family:monospace" oninput="buscarCatastro()">
+              </div>
+              <p style="font-size:11px;color:var(--text2);margin-top:4px">Detecta si ya hemos trabajado en la misma parcela.</p>
+            </div>
+            <div id="busq-resultados"></div>
+          </div>
+          <div>
+            <div class="form-section">
+              <h3><span>🔗</span> Acceso rápido al catastro</h3>
+              <div class="field"><label>Referencia catastral</label>
+                <input type="text" id="busq-ref2" placeholder="46230B001000120000ZA" style="font-family:monospace">
+              </div>
+              <a class="catastro-btn" href="#" onclick="abrirCatastroDesde('busq-ref2');return false;">🔗 Abrir en el Catastro</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DETALLE -->
+      <div id="view-detalle" class="view">
+        <div style="margin-bottom:12px"><button class="btn" onclick="nav('expedientes')">← Volver</button></div>
+        <div class="card" id="detalle-card">
+          <div class="loading"><div class="spinner"></div>Cargando...</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIGURACION ──────────────────────────────────
+const CONFIG = {
+  clientId:  '33fe1962-33ad-41a8-b647-82e649491105',
+  tenantId:  'dc0719cf-1b7a-426b-a68d-e1ac59ba08d7',
+  siteHost:  'gesiolevante.sharepoint.com',
+  sitePath:  '/sites/Fichajes',
+  listName:  'Expedientes',
+  redirectUri: 'https://gesioslevante-bit.github.io/expedientes-gesios/'
+};
+// ──────────────────────────────────────────────────
+
+const msalConfig = {
+  auth: {
+    clientId: CONFIG.clientId,
+    authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+    redirectUri: CONFIG.redirectUri
+  },
+  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/Files.ReadWrite.All','User.Read'];
+
+let token = null;
+let siteId = null;
+let listId = null;
+let expedientesCache = [];
+let numExpediente = '';
+
+// ── AUTH ───────────────────────────────────────────
+async function init() {
+  await msalInstance.initialize();
+  try {
+    const resp = await msalInstance.handleRedirectPromise();
+    if (resp) setAccount(resp.account);
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      msalInstance.setActiveAccount(accounts[0]);
+      await iniciarApp();
+    }
+  } catch(e) { console.error(e); }
+}
+
+function login() {
+  msalInstance.loginRedirect({ scopes });
+}
+
+function logout() {
+  msalInstance.logoutRedirect();
+}
+
+function setAccount(account) {
+  msalInstance.setActiveAccount(account);
+  document.getElementById('user-name').textContent = account.name || account.username;
+  document.getElementById('user-avatar').textContent = (account.name||account.username||'?')[0].toUpperCase();
+}
+
+async function getToken() {
+  try {
+    const resp = await msalInstance.acquireTokenSilent({ scopes, account: msalInstance.getActiveAccount() });
+    return resp.accessToken;
+  } catch(e) {
+    await msalInstance.acquireTokenRedirect({ scopes });
+  }
+}
+
+async function iniciarApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display  = 'flex';
+  const account = msalInstance.getActiveAccount();
+  if (account) setAccount(account);
+  token = await getToken();
+  await getSiteId();
+  await getListId();
+  await generarNumeroExpediente();
+  document.getElementById('f-num').value = numExpediente;
+  document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
+  nav('alta');
+}
+
+// ── GRAPH API ──────────────────────────────────────
+async function graph(method, path, body) {
+  token = await getToken();
+  const opts = {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(`https://graph.microsoft.com/v1.0${path}`, opts);
+  if (!r.ok) { const e = await r.text(); throw new Error(e); }
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+async function getSiteId() {
+  const r = await graph('GET', `/sites/${CONFIG.siteHost}:${CONFIG.sitePath}`);
+  siteId = r.id;
+}
+
+async function getListId() {
+  const r = await graph('GET', `/sites/${siteId}/lists`);
+  const lista = r.value.find(l => l.name === CONFIG.listName || l.displayName === CONFIG.listName);
+  if (lista) listId = lista.id;
+}
+
+async function generarNumeroExpediente() {
+  try {
+    const r = await graph('GET', `/sites/${siteId}/lists/${listId}/items?$expand=fields&$select=fields&$top=1000`);
+    const items = r.value || [];
+    const año = new Date().getFullYear();
+    const nums = items
+      .map(i => i.fields.NumeroExpediente || '')
+      .filter(n => n.startsWith(`EXP-${año}-`))
+      .map(n => parseInt(n.split('-')[2]) || 0);
+    const siguiente = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+    numExpediente = `EXP-${año}-${String(siguiente).padStart(3,'0')}`;
+  } catch(e) {
+    numExpediente = `EXP-${new Date().getFullYear()}-001`;
+  }
+}
+
+async function cargarExpedientes() {
+  const r = await graph('GET', `/sites/${siteId}/lists/${listId}/items?$expand=fields&$orderby=createdDateTime desc&$top=200`);
+  expedientesCache = (r.value || []).map(i => ({ id: i.id, ...i.fields }));
+  return expedientesCache;
+}
+
+// ── GUARDAR EXPEDIENTE ─────────────────────────────
+async function guardarExpediente() {
+  if (!validar()) return;
+  const btn = document.getElementById('btn-guardar');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    const fields = {
+      NumeroExpediente: document.getElementById('f-num').value,
+      Cliente:          document.getElementById('f-cliente').value.trim(),
+      Descripcion:      document.getElementById('f-desc').value.trim(),
+      RefCatastral:     document.getElementById('f-ref').value.trim(),
+      Municipio:        document.getElementById('f-muni').value.trim(),
+      FechaAlta:        document.getElementById('f-fecha').value,
+      FechaVisita:      document.getElementById('f-visita').value || null,
+      Tecnico:          document.getElementById('f-tecnico').value,
+      Facturacion:      document.getElementById('f-factura').value,
+      Notas:            document.getElementById('f-notas').value.trim(),
+      Estado:           'PARA VISITAR',
+      CarpetasCreadas:  false
+    };
+    await graph('POST', `/sites/${siteId}/lists/${listId}/items`, { fields });
+    toast('✅ Expediente ' + fields.NumeroExpediente + ' creado. Las carpetas se crearán automáticamente.', 'success');
+    // Resetear formulario
+    await generarNumeroExpediente();
+    document.getElementById('f-num').value = numExpediente;
+    document.getElementById('f-cliente').value = '';
+    document.getElementById('f-desc').value = '';
+    document.getElementById('f-ref').value = '';
+    document.getElementById('f-muni').value = '';
+    document.getElementById('f-visita').value = '';
+    document.getElementById('f-tecnico').value = '';
+    document.getElementById('f-notas').value = '';
+    document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
+    actualizar();
+    nav('expedientes');
+  } catch(e) {
+    toast('❌ Error al guardar: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '📂 Crear expediente';
+  }
+}
+
+// ── VISTAS ─────────────────────────────────────────
+const navTitles = {
+  dashboard:'Resumen general', alta:'Nuevo expediente',
+  expedientes:'Expedientes', busqueda:'Buscar por referencia catastral', detalle:'Ficha de expediente'
+};
+const navOrder = ['dashboard','alta','expedientes','busqueda'];
+
+function nav(s) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-'+s)?.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach((n,i) => n.classList.toggle('active', navOrder[i]===s));
+  document.getElementById('topbar-title').textContent = navTitles[s] || s;
+  if (s === 'dashboard') cargarDashboard();
+  if (s === 'expedientes') cargarTablaExpedientes();
+  if (s === 'alta') limpiarErrores();
+}
+
+// ── DASHBOARD ──────────────────────────────────────
+async function cargarDashboard() {
+  document.getElementById('dashboard-tabla').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>';
+  const exps = await cargarExpedientes();
+  document.getElementById('stat-total').textContent = exps.length;
+  document.getElementById('stat-visitar').textContent = exps.filter(e => e.Estado === 'PARA VISITAR').length;
+  document.getElementById('stat-ejecucion').textContent = exps.filter(e => e.Estado === 'EN EJECUCION').length;
+  document.getElementById('stat-factura').textContent = exps.filter(e => e.Estado === 'FINALIZADA').length;
+  document.getElementById('badge-exp').textContent = exps.length;
+  const recientes = exps.slice(0,5);
+  document.getElementById('dashboard-tabla').innerHTML = tablaExpedientesHTML(recientes);
+}
+
+// ── TABLA EXPEDIENTES ──────────────────────────────
+async function cargarTablaExpedientes() {
+  document.getElementById('exp-tabla').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>';
+  const exps = await cargarExpedientes();
+  document.getElementById('badge-exp').textContent = exps.length;
+  document.getElementById('exp-tabla').innerHTML = tablaExpedientesHTML(exps);
+}
+
+function tablaExpedientesHTML(exps) {
+  if (!exps.length) return '<div class="loading">Sin expedientes</div>';
+  const badgeEstado = e => {
+    const m = {
+      'PARA VISITAR':'b-blue','VISITADA':'b-teal',
+      'PRESUPUESTO ENVIADO PENDIENTE DE APROBACION':'b-amber',
+      'AGENDADA':'b-purple','EN EJECUCION':'b-green',
+      'FINALIZADA':'b-gray','FACTURADA':'b-teal',
+      'COBRADA':'b-green','Nº FACTURA':'b-gray'
+    };
+    return `<span class="badge ${m[e]||'b-gray'}">${e||'—'}</span>`;
+  };
+  return `<table><thead><tr><th>Nº</th><th>Cliente</th><th>Descripción</th><th>Ref. catastral</th><th>Estado</th><th>Alta</th><th>Carpetas</th><th></th></tr></thead>
+  <tbody>${exps.map(e=>`<tr>
+    <td><strong>${e.NumeroExpediente||'—'}</strong></td>
+    <td>${e.Cliente||'—'}</td>
+    <td>${e.Descripcion||'—'}</td>
+    <td style="font-family:monospace;font-size:11px">${e.RefCatastral||'—'}</td>
+    <td>${badgeEstado(e.Estado)}</td>
+    <td>${e.FechaAlta?e.FechaAlta.split('T')[0]:'—'}</td>
+    <td>${e.CarpetasCreadas?'<span class="badge b-green">✓ Creadas</span>':'<span class="badge b-amber">⏳ Pendiente</span>'}</td>
+    <td><button class="row-act" onclick="verDetalle('${e.id}')">👁</button></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+function filtrarExpedientes() {
+  const q = document.getElementById('exp-search').value.toLowerCase();
+  const exps = expedientesCache.filter(e =>
+    (e.NumeroExpediente||'').toLowerCase().includes(q) ||
+    (e.Cliente||'').toLowerCase().includes(q) ||
+    (e.Descripcion||'').toLowerCase().includes(q) ||
+    (e.RefCatastral||'').toLowerCase().includes(q)
+  );
+  document.getElementById('exp-tabla').innerHTML = tablaExpedientesHTML(exps);
+}
+
+// ── DETALLE ────────────────────────────────────────
+async function verDetalle(id) {
+  nav('detalle');
+  const e = expedientesCache.find(x => x.id === id) || {};
+  const estados = ['PARA VISITAR','VISITADA','PRESUPUESTO ENVIADO PENDIENTE DE APROBACION','AGENDADA','EN EJECUCION','FINALIZADA','FACTURADA','COBRADA'];
+  const idxActual = estados.indexOf(e.Estado);
+  const fasesHTML = estados.map((s,i) => {
+    const cls = i < idxActual ? 'done' : i === idxActual ? 'current' : '';
+    return `<div class="fase-chip ${cls}" onclick="cambiarEstado('${id}','${s}')">${s}</div>`;
+  }).join('');
+  document.getElementById('detalle-card').innerHTML = `
+    <div class="card-header">📂 <h2>${e.NumeroExpediente||'—'} — ${e.Descripcion||'—'}</h2>
+      <span class="badge b-blue">${e.Estado||'—'}</span></div>
+    <div class="detalle-grid">
+      <div class="det-field"><label>Cliente</label><p>${e.Cliente||'—'}</p></div>
+      <div class="det-field"><label>Ref. catastral</label><p style="font-family:monospace;font-size:12px">${e.RefCatastral||'—'}</p></div>
+      <div class="det-field"><label>Municipio</label><p>${e.Municipio||'—'}</p></div>
+      <div class="det-field"><label>Fecha alta</label><p>${e.FechaAlta?e.FechaAlta.split('T')[0]:'—'}</p></div>
+      <div class="det-field"><label>Fecha visita</label><p>${e.FechaVisita?e.FechaVisita.split('T')[0]:'—'}</p></div>
+      <div class="det-field"><label>Técnico</label><p>${e.Tecnico||'—'}</p></div>
+      <div class="det-field"><label>Facturación</label><p>${e.Facturacion||'—'}</p></div>
+      <div class="det-field"><label>Carpetas</label><p>${e.CarpetasCreadas?'✅ Creadas':'⏳ Pendiente'}</p></div>
+      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">Z:\\DATOS\\${san(e.Cliente||'')}\\OBRAS ${new Date().getFullYear()}\\${e.NumeroExpediente}_${san(e.Descripcion||'')}</p></div>
+    </div>
+    <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
+    <div class="fases-row">${fasesHTML}</div>
+    ${e.Notas?`<div style="padding:0 16px 16px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">Notas</div><div style="font-size:12px;background:var(--bg);padding:8px 10px;border-radius:var(--radius)">${e.Notas}</div></div>`:''}`;
+}
+
+async function cambiarEstado(id, nuevoEstado) {
+  try {
+    await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${id}/fields`, { Estado: nuevoEstado });
+    const exp = expedientesCache.find(e => e.id === id);
+    if (exp) exp.Estado = nuevoEstado;
+    toast('✅ Estado actualizado: ' + nuevoEstado, 'success');
+    verDetalle(id);
+  } catch(e) {
+    toast('❌ Error: ' + e.message, 'error');
+  }
+}
+
+// ── BUSQUEDA CATASTRAL ─────────────────────────────
+function buscarCatastro() {
+  const q = document.getElementById('busq-ref').value.trim().toUpperCase();
+  const res = document.getElementById('busq-resultados');
+  if (q.length < 4) { res.innerHTML = ''; return; }
+  const matches = expedientesCache.filter(e => (e.RefCatastral||'').toUpperCase().includes(q));
+  if (!matches.length) {
+    res.innerHTML = `<div class="ref-result" style="color:var(--text2);font-size:12px">Sin expedientes con esa referencia catastral.</div>`;
+    return;
+  }
+  res.innerHTML = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px">${matches.length} expediente(s) encontrado(s):</div>` +
+    matches.map(e=>`<div class="ref-result">
+      <div style="font-size:12px;font-weight:500">${e.NumeroExpediente} — ${e.Descripcion}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:2px">${e.Cliente} · <span style="font-family:monospace">${e.RefCatastral}</span></div>
+      <div style="margin-top:5px"><span class="badge b-blue">${e.Estado||'—'}</span></div>
+    </div>`).join('');
+}
+
+// ── HELPERS ────────────────────────────────────────
+function san(t) { return (t||'').trim().replace(/[\\/:*?"<>|]/g,'_'); }
+
+function actualizar() {
+  const c = document.getElementById('f-cliente').value.trim();
+  const d = document.getElementById('f-desc').value.trim();
+  const r = document.getElementById('f-ref').value.trim();
+  const num = document.getElementById('f-num').value;
+  const fecha = document.getElementById('f-fecha').value || new Date().getFullYear();
+  const año = fecha.toString().substring(0,4);
+  document.getElementById('ruta-l1').innerHTML = `Z:\\DATOS\\${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
+  document.getElementById('ruta-l2').innerHTML = `OBRAS ${año}\\${d?`<span class="ok">${num}_${san(d).substring(0,30)}</span>`:'<span class="pend">expediente</span>'}\\`;
+  document.getElementById('ref-tag').textContent = r || 'Introduce la referencia';
+  setChk('chk-cliente', !!c, 'Cliente', c?c.substring(0,20):'Sin rellenar');
+  setChk('chk-desc', !!d, 'Descripción', d?d.substring(0,20):'Sin rellenar');
+  setChk('chk-ref', !!r, 'Ref. catastral', r?r.substring(0,18):'Sin rellenar');
+}
+
+function setChk(id, ok, label, val) {
+  const el = document.getElementById(id);
+  el.className = 'chk ' + (ok ? 'ok' : 'pend');
+  el.innerHTML = `<span class="chk-dot"></span><span>${label}</span><span class="chk-val">${val}</span>`;
+}
+
+function validar() {
+  limpiarErrores();
+  let err = 0;
+  const c = document.getElementById('f-cliente').value.trim();
+  const d = document.getElementById('f-desc').value.trim();
+  const r = document.getElementById('f-ref').value.trim();
+  if (!c) { marcarError('field-cliente'); err++; }
+  if (!d) { marcarError('field-desc'); err++; }
+  if (!r) { marcarError('field-ref'); err++; }
+  if (err > 0) {
+    document.getElementById('validacion-msg').style.display = 'inline-flex';
+    document.getElementById('field-cliente').scrollIntoView({behavior:'smooth',block:'center'});
+  }
+  return err === 0;
+}
+
+function limpiarErrores() {
+  ['field-cliente','field-desc','field-ref'].forEach(id => {
+    const f = document.getElementById(id);
+    f.classList.remove('has-error');
+    f.querySelector('input,select')?.classList.remove('error');
+  });
+  document.getElementById('validacion-msg').style.display = 'none';
+}
+
+function marcarError(id) {
+  const f = document.getElementById(id);
+  f.classList.add('has-error');
+  f.querySelector('input,select')?.classList.add('error');
+}
+
+function abrirCatastro() {
+  const r = document.getElementById('f-ref').value.trim();
+  window.open(r ? `https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCBusqueda.aspx?rc1=${r.substring(0,7)}&rc2=${r.substring(7,14)}` : 'https://www1.sedecatastro.gob.es/', '_blank');
+}
+
+function abrirCatastroDesde(id) {
+  const r = document.getElementById(id).value.trim();
+  window.open(r ? `https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCBusqueda.aspx?rc1=${r.substring(0,7)}&rc2=${r.substring(7,14)}` : 'https://www1.sedecatastro.gob.es/', '_blank');
+}
+
+function toast(msg, tipo) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast show ${tipo||''}`;
+  setTimeout(() => t.className = 'toast', 4000);
+}
+
+init();
+</script>
+</body>
+</html>
