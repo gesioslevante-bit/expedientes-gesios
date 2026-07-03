@@ -209,7 +209,7 @@ tr:hover td{background:var(--bg)}
             <div class="form-section">
               <h3><span>👤</span> Datos del encargo</h3>
               <div class="field-row">
-                <div class="field"><label>Número de expediente</label><input type="text" id="f-num" readonly style="background:var(--bg)"></div>
+                <div class="field" id="field-num"><label>Número de expediente *</label><input type="text" id="f-num" placeholder="Ej: EXP-2026-001"></div>
                 <div class="field"><label>Fecha de entrada</label><input type="date" id="f-fecha" oninput="actualizar()"></div>
               </div>
               <div class="field" id="field-cliente">
@@ -438,8 +438,6 @@ async function iniciarApp() {
   token = await getToken();
   await getSiteId();
   await getListId();
-  await generarNumeroExpediente();
-  document.getElementById('f-num').value = numExpediente;
   document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
   nav('alta');
 }
@@ -470,22 +468,6 @@ async function getListId() {
   if (lista) listId = lista.id;
 }
 
-async function generarNumeroExpediente() {
-  try {
-    const r = await graph('GET', `/sites/${siteId}/lists/${listId}/items?$expand=fields&$select=fields&$top=1000`);
-    const items = r.value || [];
-    const año = new Date().getFullYear();
-    const nums = items
-      .map(i => i.fields.NumeroExpediente || '')
-      .filter(n => n.startsWith(`EXP-${año}-`))
-      .map(n => parseInt(n.split('-')[2]) || 0);
-    const siguiente = nums.length > 0 ? Math.max(...nums) + 1 : 1;
-    numExpediente = `EXP-${año}-${String(siguiente).padStart(3,'0')}`;
-  } catch(e) {
-    numExpediente = `EXP-${new Date().getFullYear()}-001`;
-  }
-}
-
 async function cargarExpedientes() {
   const r = await graph('GET', `/sites/${siteId}/lists/${listId}/items?$expand=fields&$orderby=createdDateTime desc&$top=200`);
   expedientesCache = (r.value || []).map(i => ({ id: i.id, ...i.fields }));
@@ -507,7 +489,7 @@ async function guardarExpediente() {
       FechaAlta:        document.getElementById('f-fecha').value,
       FechaVisita:      document.getElementById('f-visita').value || null,
       Tecnico:          document.getElementById('f-tecnico').value,
-      Facturacion:      document.getElementById('f-factura').value,
+      Facturaci_x00f3_n: document.getElementById('f-factura').value,
       Notas:            document.getElementById('f-notas').value.trim(),
       Estado:           'PARA VISITAR',
       CarpetasCreadas:  false
@@ -515,8 +497,7 @@ async function guardarExpediente() {
     await graph('POST', `/sites/${siteId}/lists/${listId}/items`, { fields });
     toast('✅ Expediente ' + fields.NumeroExpediente + ' creado. Las carpetas se crearán automáticamente.', 'success');
     // Resetear formulario
-    await generarNumeroExpediente();
-    document.getElementById('f-num').value = numExpediente;
+    document.getElementById('f-num').value = '';
     document.getElementById('f-cliente').value = '';
     document.getElementById('f-desc').value = '';
     document.getElementById('f-ref').value = '';
@@ -612,7 +593,7 @@ function filtrarExpedientes() {
 async function verDetalle(id) {
   nav('detalle');
   const e = expedientesCache.find(x => x.id === id) || {};
-  const estados = ['PARA VISITAR','VISITADA','PRESUPUESTO ENVIADO PENDIENTE DE APROBACION','AGENDADA','EN EJECUCION','FINALIZADA','FACTURADA','COBRADA'];
+  const estados = ['PARA VISITAR','VISITADA','PRESUPUESTO ENVIADO','PENDIENTE DE APROBACION','AGENDADA','EN EJECUCION','FINALIZADA','FACTURADA','COBRADA'];
   const idxActual = estados.indexOf(e.Estado);
   const fasesHTML = estados.map((s,i) => {
     const cls = i < idxActual ? 'done' : i === idxActual ? 'current' : '';
@@ -628,7 +609,7 @@ async function verDetalle(id) {
       <div class="det-field"><label>Fecha alta</label><p>${e.FechaAlta?e.FechaAlta.split('T')[0]:'—'}</p></div>
       <div class="det-field"><label>Fecha visita</label><p>${e.FechaVisita?e.FechaVisita.split('T')[0]:'—'}</p></div>
       <div class="det-field"><label>Técnico</label><p>${e.Tecnico||'—'}</p></div>
-      <div class="det-field"><label>Facturación</label><p>${e.Facturacion||'—'}</p></div>
+      <div class="det-field"><label>Facturación</label><p>${e.Facturaci_x00f3_n||'—'}</p></div>
       <div class="det-field"><label>Carpetas</label><p>${e.CarpetasCreadas?'✅ Creadas':'⏳ Pendiente'}</p></div>
       <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">Z:\\DATOS\\${san(e.Cliente||'')}\\OBRAS ${new Date().getFullYear()}\\${e.NumeroExpediente}_${san(e.Descripcion||'')}</p></div>
     </div>
@@ -694,21 +675,23 @@ function setChk(id, ok, label, val) {
 function validar() {
   limpiarErrores();
   let err = 0;
+  const n = document.getElementById('f-num').value.trim();
   const c = document.getElementById('f-cliente').value.trim();
   const d = document.getElementById('f-desc').value.trim();
   const r = document.getElementById('f-ref').value.trim();
+  if (!n) { marcarError('field-num'); err++; }
   if (!c) { marcarError('field-cliente'); err++; }
   if (!d) { marcarError('field-desc'); err++; }
   if (!r) { marcarError('field-ref'); err++; }
   if (err > 0) {
     document.getElementById('validacion-msg').style.display = 'inline-flex';
-    document.getElementById('field-cliente').scrollIntoView({behavior:'smooth',block:'center'});
+    document.getElementById('field-num').scrollIntoView({behavior:'smooth',block:'center'});
   }
   return err === 0;
 }
 
 function limpiarErrores() {
-  ['field-cliente','field-desc','field-ref'].forEach(id => {
+  ['field-num','field-cliente','field-desc','field-ref'].forEach(id => {
     const f = document.getElementById(id);
     f.classList.remove('has-error');
     f.querySelector('input,select')?.classList.remove('error');
