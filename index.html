@@ -370,7 +370,7 @@ const CONFIG = {
   clientId:  '33fe1962-33ad-41a8-b647-82e649491105',
   tenantId:  'dc0719cf-1b7a-426b-a68d-e1ac59ba08d7',
   siteHost:  'gesiolevante.sharepoint.com',
-  sitePath:  '/sites/Fichajes',
+  sitePath:  '', // sitio raíz: la lista "Expedientes" vive aquí, no en /sites/Fichajes
   listName:  'Expedientes',
   redirectUri: 'https://gesioslevante-bit.github.io/expedientes-gesios/'
 };
@@ -459,7 +459,8 @@ async function graph(method, path, body) {
 }
 
 async function getSiteId() {
-  const r = await graph('GET', `/sites/${CONFIG.siteHost}:${CONFIG.sitePath}`);
+  const path = CONFIG.sitePath ? `/sites/${CONFIG.siteHost}:${CONFIG.sitePath}` : `/sites/${CONFIG.siteHost}`;
+  const r = await graph('GET', path);
   siteId = r.id;
 }
 
