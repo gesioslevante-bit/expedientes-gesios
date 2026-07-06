@@ -606,7 +606,10 @@ function tablaExpedientesHTML(exps) {
     <td>${badgeEstado(e.Estado)}</td>
     <td>${e.FechaAlta?e.FechaAlta.split('T')[0]:'—'}</td>
     <td>${e.CarpetasCreadas?'<span class="badge b-green">✓ Creadas</span>':'<span class="badge b-amber">⏳ Pendiente</span>'}</td>
-    <td><button class="row-act" onclick="verDetalle('${e.id}')">👁</button></td>
+    <td>
+      <button class="row-act" onclick="verDetalle('${e.id}')">👁</button>
+      <button class="row-act" onclick="borrarExpediente('${e.id}','${(e.NumeroExpediente||'').replace(/'/g,"\\'")}')" title="Eliminar" style="color:var(--red,#dc2626)">🗑</button>
+    </td>
   </tr>`).join('')}</tbody></table>`;
 }
 
@@ -647,7 +650,21 @@ async function verDetalle(id) {
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
-    ${e.Notas?`<div style="padding:0 16px 16px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">Notas</div><div style="font-size:12px;background:var(--bg);padding:8px 10px;border-radius:var(--radius)">${e.Notas}</div></div>`:''}`;
+    ${e.Notas?`<div style="padding:0 16px 16px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">Notas</div><div style="font-size:12px;background:var(--bg);padding:8px 10px;border-radius:var(--radius)">${e.Notas}</div></div>`:''}
+    <div style="padding:0 16px 16px;text-align:right"><button class="btn" onclick="borrarExpediente('${id}','${(e.NumeroExpediente||'').replace(/'/g,"\\'")}');nav('expedientes')" style="color:var(--red,#dc2626)">🗑 Eliminar expediente</button></div>`;
+}
+
+async function borrarExpediente(id, numExp) {
+  if (!confirm(`¿Seguro que quieres eliminar el expediente ${numExp || ''}? Esta acción no se puede deshacer.\n\nNota: esto solo borra el registro en SharePoint, no borra ninguna carpeta ya creada en Z:\\ (esas tendrás que borrarlas tú a mano si existen).`)) return;
+  try {
+    await graph('DELETE', `/sites/${siteId}/lists/${listId}/items/${id}`);
+    expedientesCache = expedientesCache.filter(e => e.id !== id);
+    document.getElementById('badge-exp').textContent = expedientesCache.length;
+    document.getElementById('exp-tabla').innerHTML = tablaExpedientesHTML(expedientesCache);
+    toast('🗑 Expediente eliminado', 'success');
+  } catch(e) {
+    toast('❌ Error al eliminar: ' + e.message, 'error');
+  }
 }
 
 async function cambiarEstado(id, nuevoEstado) {
