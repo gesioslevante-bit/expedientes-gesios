@@ -168,7 +168,7 @@ tr:hover td{background:var(--bg)}
     <div class="nav-section">
       <div class="nav-label">Principal</div>
       <div class="nav-item" onclick="nav('dashboard')">🏠 Resumen</div>
-      <div class="nav-item active" onclick="nav('alta')">📂 Nuevo expediente</div>
+      <div class="nav-item active" onclick="irANuevoExpediente()">📂 Nuevo expediente</div>
       <div class="nav-item" onclick="nav('expedientes')">🗂 Expedientes <span class="nav-badge" id="badge-exp">—</span></div>
       <div class="nav-item" onclick="nav('busqueda')">🔍 Buscar catastro</div>
     </div>
@@ -228,20 +228,23 @@ tr:hover td{background:var(--bg)}
             <div class="form-section">
               <h3><span>🗺</span> Referencia catastral</h3>
               <div class="field-row">
-                <div class="field" id="field-ref">
-                  <label>Referencia catastral <span class="req">*</span></label>
-                  <input type="text" id="f-ref" placeholder="Ej: 46230A006000380000XJ" oninput="actualizar()" style="font-family:monospace;font-size:12px">
-                  <div class="error-msg">Introduce la referencia catastral</div>
+                <div class="field" id="field-ref" style="flex:1">
+                  <label>Referencia/s catastral/es <span class="req">*</span></label>
+                  <div id="refs-container">
+                    <div class="ref-row" style="display:flex;gap:6px;margin-bottom:6px">
+                      <input type="text" class="f-ref-item" placeholder="Ej: 46230A006000380000XJ" oninput="actualizar()" style="font-family:monospace;font-size:12px;flex:1">
+                      <button type="button" class="row-act" onclick="quitarRef(this)" title="Quitar" style="flex:0 0 auto">✕</button>
+                    </div>
+                  </div>
+                  <button type="button" class="btn" onclick="añadirRef()" style="font-size:12px;padding:4px 10px">+ Añadir otra referencia</button>
+                  <div class="error-msg">Introduce al menos una referencia catastral</div>
                 </div>
                 <div class="field">
                   <label>Municipio</label>
                   <input type="text" id="f-muni" placeholder="Estivella" oninput="actualizar()">
                 </div>
               </div>
-              <a class="catastro-btn" href="#" onclick="abrirCatastro();return false;">
-                🔗 Consultar en Sede Electrónica del Catastro
-                <span class="ref-tag" id="ref-tag">Introduce la referencia</span>
-              </a>
+              <div id="catastro-links"></div>
             </div>
 
             <div class="form-section">
@@ -393,6 +396,7 @@ let siteId = null;
 let listId = null;
 let clientesListId = null;
 let clientesCache = [];
+let editandoId = null;
 let expedientesCache = [];
 let numExpediente = '';
 
@@ -510,41 +514,83 @@ async function guardarExpediente() {
   if (!validar()) return;
   const btn = document.getElementById('btn-guardar');
   btn.disabled = true; btn.textContent = 'Guardando...';
+  const editando = !!editandoId;
   try {
     const fields = {
       NumeroExpediente: document.getElementById('f-num').value,
       Cliente:          document.getElementById('f-cliente').value.trim(),
       Descripcion:      document.getElementById('f-desc').value.trim(),
-      RefCatastral:     document.getElementById('f-ref').value.trim(),
+      RefCatastral:     getRefs().join('; '),
       Municipio:        document.getElementById('f-muni').value.trim(),
       FechaAlta:        document.getElementById('f-fecha').value,
       FechaVisita:      document.getElementById('f-visita').value || null,
       Tecnico:          document.getElementById('f-tecnico').value,
       Facturaci_x00f3_n: document.getElementById('f-factura').value,
-      Notas:            document.getElementById('f-notas').value.trim(),
-      Estado:           'PARA VISITAR',
-      CarpetasCreadas:  false
+      Notas:            document.getElementById('f-notas').value.trim()
     };
-    await graph('POST', `/sites/${siteId}/lists/${listId}/items`, { fields });
+    if (!editando) {
+      fields.Estado = 'PARA VISITAR';
+      fields.CarpetasCreadas = false;
+    }
+    if (editando) {
+      await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${editandoId}/fields`, fields);
+    } else {
+      await graph('POST', `/sites/${siteId}/lists/${listId}/items`, { fields });
+    }
     await asegurarCliente(fields.Cliente);
-    toast('✅ Expediente ' + fields.NumeroExpediente + ' creado. Las carpetas se crearán automáticamente.', 'success');
+    toast(editando ? '✅ Expediente ' + fields.NumeroExpediente + ' actualizado.' : '✅ Expediente ' + fields.NumeroExpediente + ' creado. Las carpetas se crearán automáticamente.', 'success');
+    const idVuelta = editandoId;
+    editandoId = null;
     // Resetear formulario
     document.getElementById('f-num').value = '';
     document.getElementById('f-cliente').value = '';
     document.getElementById('f-desc').value = '';
-    document.getElementById('f-ref').value = '';
+    resetRefs();
     document.getElementById('f-muni').value = '';
     document.getElementById('f-visita').value = '';
     document.getElementById('f-tecnico').value = '';
     document.getElementById('f-notas').value = '';
     document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
     actualizar();
-    nav('expedientes');
+    document.getElementById('topbar-title').textContent = 'Nuevo expediente';
+    btn.textContent = '📂 Crear expediente';
+    if (editando) {
+      await cargarExpedientes();
+      nav('detalle');
+      verDetalle(idVuelta);
+    } else {
+      nav('expedientes');
+    }
   } catch(e) {
     toast('❌ Error al guardar: ' + e.message, 'error');
   } finally {
-    btn.disabled = false; btn.textContent = '📂 Crear expediente';
+    btn.disabled = false; if (!editandoId) btn.textContent = editando ? '💾 Guardar cambios' : '📂 Crear expediente';
   }
+}
+
+function editarExpediente(id) {
+  const e = expedientesCache.find(x => x.id === id);
+  if (!e) return;
+  editandoId = id;
+  nav('alta');
+  document.getElementById('f-num').value = e.NumeroExpediente || '';
+  document.getElementById('f-cliente').value = e.Cliente || '';
+  document.getElementById('f-desc').value = e.Descripcion || '';
+  const refs = (e.RefCatastral || '').split(';').map(x=>x.trim()).filter(Boolean);
+  document.getElementById('refs-container').innerHTML = (refs.length ? refs : ['']).map(r => `<div class="ref-row" style="display:flex;gap:6px;margin-bottom:6px">
+    <input type="text" class="f-ref-item" value="${r.replace(/"/g,'&quot;')}" placeholder="Ej: 46230A006000380000XJ" oninput="actualizar()" style="font-family:monospace;font-size:12px;flex:1">
+    <button type="button" class="row-act" onclick="quitarRef(this)" title="Quitar" style="flex:0 0 auto">✕</button>
+  </div>`).join('');
+  document.getElementById('f-muni').value = e.Municipio || '';
+  document.getElementById('f-fecha').value = e.FechaAlta ? e.FechaAlta.split('T')[0] : '';
+  document.getElementById('f-visita').value = e.FechaVisita ? e.FechaVisita.split('T')[0] : '';
+  document.getElementById('f-tecnico').value = e.Tecnico || '';
+  document.getElementById('f-factura').value = e.Facturaci_x00f3_n || '';
+  document.getElementById('f-notas').value = e.Notas || '';
+  document.getElementById('topbar-title').textContent = 'Editar expediente';
+  const btn = document.getElementById('btn-guardar');
+  btn.textContent = '💾 Guardar cambios';
+  actualizar();
 }
 
 // ── VISTAS ─────────────────────────────────────────
@@ -553,6 +599,23 @@ const navTitles = {
   expedientes:'Expedientes', busqueda:'Buscar por referencia catastral', detalle:'Ficha de expediente'
 };
 const navOrder = ['dashboard','alta','expedientes','busqueda'];
+
+function irANuevoExpediente() {
+  editandoId = null;
+  document.getElementById('f-num').value = '';
+  document.getElementById('f-cliente').value = '';
+  document.getElementById('f-desc').value = '';
+  resetRefs();
+  document.getElementById('f-muni').value = '';
+  document.getElementById('f-visita').value = '';
+  document.getElementById('f-tecnico').value = '';
+  document.getElementById('f-notas').value = '';
+  document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('topbar-title').textContent = 'Nuevo expediente';
+  document.getElementById('btn-guardar').textContent = '📂 Crear expediente';
+  actualizar();
+  nav('alta');
+}
 
 function nav(s) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -608,6 +671,7 @@ function tablaExpedientesHTML(exps) {
     <td>${e.CarpetasCreadas?'<span class="badge b-green">✓ Creadas</span>':'<span class="badge b-amber">⏳ Pendiente</span>'}</td>
     <td>
       <button class="row-act" onclick="verDetalle('${e.id}')">👁</button>
+      <button class="row-act" onclick="editarExpediente('${e.id}')" title="Editar">✏️</button>
       <button class="row-act" onclick="borrarExpediente('${e.id}','${(e.NumeroExpediente||'').replace(/'/g,"\\'")}')" title="Eliminar" style="color:var(--red,#dc2626)">🗑</button>
     </td>
   </tr>`).join('')}</tbody></table>`;
@@ -639,7 +703,7 @@ async function verDetalle(id) {
       <span class="badge b-blue">${e.Estado||'—'}</span></div>
     <div class="detalle-grid">
       <div class="det-field"><label>Cliente</label><p>${e.Cliente||'—'}</p></div>
-      <div class="det-field"><label>Ref. catastral</label><p style="font-family:monospace;font-size:12px">${e.RefCatastral||'—'}</p></div>
+      <div class="det-field"><label>Ref. catastral</label><p style="font-family:monospace;font-size:12px">${(e.RefCatastral||'').split(';').map(x=>x.trim()).filter(Boolean).map(r=>`<a href="#" onclick="abrirCatastroRef('${r.replace(/'/g,"\\'")}');return false;" style="color:var(--blue-dark)">${r}</a>`).join('<br>') || '—'}</p></div>
       <div class="det-field"><label>Municipio</label><p>${e.Municipio||'—'}</p></div>
       <div class="det-field"><label>Fecha alta</label><p>${e.FechaAlta?e.FechaAlta.split('T')[0]:'—'}</p></div>
       <div class="det-field"><label>Fecha visita</label><p>${e.FechaVisita?e.FechaVisita.split('T')[0]:'—'}</p></div>
@@ -651,7 +715,10 @@ async function verDetalle(id) {
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
     ${e.Notas?`<div style="padding:0 16px 16px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">Notas</div><div style="font-size:12px;background:var(--bg);padding:8px 10px;border-radius:var(--radius)">${e.Notas}</div></div>`:''}
-    <div style="padding:0 16px 16px;text-align:right"><button class="btn" onclick="borrarExpediente('${id}','${(e.NumeroExpediente||'').replace(/'/g,"\\'")}');nav('expedientes')" style="color:var(--red,#dc2626)">🗑 Eliminar expediente</button></div>`;
+    <div style="padding:0 16px 16px;text-align:right;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="editarExpediente('${id}')">✏️ Editar expediente</button>
+      <button class="btn" onclick="borrarExpediente('${id}','${(e.NumeroExpediente||'').replace(/'/g,"\\'")}');nav('expedientes')" style="color:var(--red,#dc2626)">🗑 Eliminar expediente</button>
+    </div>`;
 }
 
 async function borrarExpediente(id, numExp) {
@@ -700,19 +767,51 @@ function buscarCatastro() {
 // ── HELPERS ────────────────────────────────────────
 function san(t) { return (t||'').trim().replace(/[\\/:*?"<>|]/g,'_'); }
 
+function getRefs() {
+  return Array.from(document.querySelectorAll('.f-ref-item')).map(i => i.value.trim()).filter(Boolean);
+}
+
+function añadirRef() {
+  const cont = document.getElementById('refs-container');
+  const row = document.createElement('div');
+  row.className = 'ref-row';
+  row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+  row.innerHTML = `<input type="text" class="f-ref-item" placeholder="Ej: 46230A006000380000XJ" oninput="actualizar()" style="font-family:monospace;font-size:12px;flex:1">
+    <button type="button" class="row-act" onclick="quitarRef(this)" title="Quitar" style="flex:0 0 auto">✕</button>`;
+  cont.appendChild(row);
+  actualizar();
+}
+
+function quitarRef(btn) {
+  const cont = document.getElementById('refs-container');
+  if (cont.children.length > 1) btn.closest('.ref-row').remove();
+  else btn.closest('.ref-row').querySelector('.f-ref-item').value = '';
+  actualizar();
+}
+
+function resetRefs() {
+  document.getElementById('refs-container').innerHTML = `<div class="ref-row" style="display:flex;gap:6px;margin-bottom:6px">
+    <input type="text" class="f-ref-item" placeholder="Ej: 46230A006000380000XJ" oninput="actualizar()" style="font-family:monospace;font-size:12px;flex:1">
+    <button type="button" class="row-act" onclick="quitarRef(this)" title="Quitar" style="flex:0 0 auto">✕</button>
+  </div>`;
+}
+
 function actualizar() {
   const c = document.getElementById('f-cliente').value.trim();
   const d = document.getElementById('f-desc').value.trim();
-  const r = document.getElementById('f-ref').value.trim();
+  const refs = getRefs();
   const num = document.getElementById('f-num').value;
   const fecha = document.getElementById('f-fecha').value || new Date().getFullYear();
   const año = fecha.toString().substring(0,4);
   document.getElementById('ruta-l1').innerHTML = `Z:\\${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
   document.getElementById('ruta-l2').innerHTML = `OBRAS ${año}\\${d?`<span class="ok">${num}_${san(d).substring(0,30)}</span>`:'<span class="pend">expediente</span>'}\\`;
-  document.getElementById('ref-tag').textContent = r || 'Introduce la referencia';
+  const linksDiv = document.getElementById('catastro-links');
+  linksDiv.innerHTML = refs.length
+    ? refs.map(r => `<a class="catastro-btn" href="#" onclick="abrirCatastroRef('${r.replace(/'/g,"\\'")}'); return false;">🔗 Consultar en el Catastro<span class="ref-tag">${r}</span></a>`).join('')
+    : `<a class="catastro-btn" href="#" onclick="return false;">🔗 Consultar en el Catastro<span class="ref-tag">Introduce la referencia</span></a>`;
   setChk('chk-cliente', !!c, 'Cliente', c?c.substring(0,20):'Sin rellenar');
   setChk('chk-desc', !!d, 'Descripción', d?d.substring(0,20):'Sin rellenar');
-  setChk('chk-ref', !!r, 'Ref. catastral', r?r.substring(0,18):'Sin rellenar');
+  setChk('chk-ref', refs.length>0, 'Ref. catastral', refs.length?refs.join(', ').substring(0,18):'Sin rellenar');
 }
 
 function setChk(id, ok, label, val) {
@@ -727,7 +826,7 @@ function validar() {
   const n = document.getElementById('f-num').value.trim();
   const c = document.getElementById('f-cliente').value.trim();
   const d = document.getElementById('f-desc').value.trim();
-  const r = document.getElementById('f-ref').value.trim();
+  const r = getRefs().length;
   if (!n) { marcarError('field-num'); err++; }
   if (!c) { marcarError('field-cliente'); err++; }
   if (!d) { marcarError('field-desc'); err++; }
@@ -754,8 +853,7 @@ function marcarError(id) {
   f.querySelector('input,select')?.classList.add('error');
 }
 
-function abrirCatastro() {
-  const r = document.getElementById('f-ref').value.trim();
+function abrirCatastroRef(r) {
   window.open(r ? `https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCBusqueda.aspx?rc1=${r.substring(0,7)}&rc2=${r.substring(7,14)}` : 'https://www1.sedecatastro.gob.es/', '_blank');
 }
 
