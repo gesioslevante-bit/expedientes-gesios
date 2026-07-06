@@ -214,7 +214,8 @@ tr:hover td{background:var(--bg)}
               </div>
               <div class="field" id="field-cliente">
                 <label>Cliente <span class="req">*</span></label>
-                <input type="text" id="f-cliente" placeholder="Nombre del cliente" oninput="actualizar()">
+                <input type="text" id="f-cliente" list="lista-clientes" placeholder="Nombre del cliente" oninput="actualizar()">
+                <datalist id="lista-clientes"></datalist>
                 <div class="error-msg">Introduce el nombre del cliente</div>
               </div>
               <div class="field" id="field-desc">
@@ -290,7 +291,7 @@ tr:hover td{background:var(--bg)}
             <div class="ruta-box">
               <h3>Carpeta que se creará</h3>
               <div class="ruta-path-wrap">
-                <div class="ruta-line" id="ruta-l1">Z:\DATOS\<span class="pend">cliente</span>\</div>
+                <div class="ruta-line" id="ruta-l1">Z:\<span class="pend">cliente</span>\</div>
                 <div class="ruta-line" id="ruta-l2" style="padding-left:10px">OBRAS 2026\<span class="pend">expediente</span>\</div>
               </div>
               <div class="subs">
@@ -390,6 +391,8 @@ const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph
 let token = null;
 let siteId = null;
 let listId = null;
+let clientesListId = null;
+let clientesCache = [];
 let expedientesCache = [];
 let numExpediente = '';
 
@@ -438,6 +441,8 @@ async function iniciarApp() {
   token = await getToken();
   await getSiteId();
   await getListId();
+  await getClientesListId();
+  await cargarClientes();
   document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
   nav('alta');
 }
@@ -468,6 +473,32 @@ async function getListId() {
   if (lista) listId = lista.id;
 }
 
+async function getClientesListId() {
+  const r = await graph('GET', `/sites/${siteId}/lists`);
+  const lista = r.value.find(l => l.name === 'Clientes' || l.displayName === 'Clientes');
+  if (lista) clientesListId = lista.id;
+}
+
+async function cargarClientes() {
+  if (!clientesListId) return;
+  const r = await graph('GET', `/sites/${siteId}/lists/${clientesListId}/items?$expand=fields&$top=500`);
+  clientesCache = (r.value || []).map(i => i.fields.Title).filter(Boolean);
+  const dl = document.getElementById('lista-clientes');
+  dl.innerHTML = clientesCache.map(c => `<option value="${c.replace(/"/g,'&quot;')}">`).join('');
+}
+
+async function asegurarCliente(nombre) {
+  if (!clientesListId || !nombre) return;
+  const existe = clientesCache.some(c => c.toLowerCase() === nombre.toLowerCase());
+  if (existe) return;
+  try {
+    await graph('POST', `/sites/${siteId}/lists/${clientesListId}/items`, { fields: { Title: nombre } });
+    clientesCache.push(nombre);
+    const dl = document.getElementById('lista-clientes');
+    dl.innerHTML = clientesCache.map(c => `<option value="${c.replace(/"/g,'&quot;')}">`).join('');
+  } catch(e) { /* si falla, no bloquea el guardado del expediente */ }
+}
+
 async function cargarExpedientes() {
   const r = await graph('GET', `/sites/${siteId}/lists/${listId}/items?$expand=fields&$orderby=createdDateTime desc&$top=200`);
   expedientesCache = (r.value || []).map(i => ({ id: i.id, ...i.fields }));
@@ -495,6 +526,7 @@ async function guardarExpediente() {
       CarpetasCreadas:  false
     };
     await graph('POST', `/sites/${siteId}/lists/${listId}/items`, { fields });
+    await asegurarCliente(fields.Cliente);
     toast('✅ Expediente ' + fields.NumeroExpediente + ' creado. Las carpetas se crearán automáticamente.', 'success');
     // Resetear formulario
     document.getElementById('f-num').value = '';
@@ -611,7 +643,7 @@ async function verDetalle(id) {
       <div class="det-field"><label>Técnico</label><p>${e.Tecnico||'—'}</p></div>
       <div class="det-field"><label>Facturación</label><p>${e.Facturaci_x00f3_n||'—'}</p></div>
       <div class="det-field"><label>Carpetas</label><p>${e.CarpetasCreadas?'✅ Creadas':'⏳ Pendiente'}</p></div>
-      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">Z:\\DATOS\\${san(e.Cliente||'')}\\OBRAS ${new Date().getFullYear()}\\${e.NumeroExpediente}_${san(e.Descripcion||'')}</p></div>
+      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">Z:\\${san(e.Cliente||'')}\\OBRAS ${new Date().getFullYear()}\\${e.NumeroExpediente}_${san(e.Descripcion||'')}</p></div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
@@ -658,7 +690,7 @@ function actualizar() {
   const num = document.getElementById('f-num').value;
   const fecha = document.getElementById('f-fecha').value || new Date().getFullYear();
   const año = fecha.toString().substring(0,4);
-  document.getElementById('ruta-l1').innerHTML = `Z:\\DATOS\\${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
+  document.getElementById('ruta-l1').innerHTML = `Z:\\${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
   document.getElementById('ruta-l2').innerHTML = `OBRAS ${año}\\${d?`<span class="ok">${num}_${san(d).substring(0,30)}</span>`:'<span class="pend">expediente</span>'}\\`;
   document.getElementById('ref-tag').textContent = r || 'Introduce la referencia';
   setChk('chk-cliente', !!c, 'Cliente', c?c.substring(0,20):'Sin rellenar');
