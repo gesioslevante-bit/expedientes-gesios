@@ -217,6 +217,10 @@ tr:hover td{background:var(--bg)}
                 <input type="text" id="f-cliente" list="lista-clientes" placeholder="Nombre del cliente" oninput="actualizar()">
                 <datalist id="lista-clientes"></datalist>
                 <div class="error-msg">Introduce el nombre del cliente</div>
+                <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-weight:400;cursor:pointer">
+                  <input type="checkbox" id="f-particular" onchange="actualizar()" style="width:auto">
+                  Cliente particular (no empresa)
+                </label>
               </div>
               <div class="field" id="field-desc">
                 <label>Descripción de la obra <span class="req">*</span></label>
@@ -296,6 +300,7 @@ tr:hover td{background:var(--bg)}
               <div class="ruta-path-wrap">
                 <div class="ruta-line" id="ruta-l1">Z:\<span class="pend">cliente</span>\</div>
                 <div class="ruta-line" id="ruta-l2" style="padding-left:10px">OBRAS 2026\<span class="pend">expediente</span>\</div>
+                <div class="ruta-line" id="ruta-l3" style="padding-left:20px;display:none"></div>
               </div>
               <div class="subs">
                 <div class="sub-item">📁 01_Catastro</div>
@@ -370,6 +375,14 @@ tr:hover td{background:var(--bg)}
 
 <script>
 // ── CONFIGURACION ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// 🏢 CONFIGURACIÓN DE EMPRESA — cambiar SOLO esto para clonar la
+// app a otra empresa con su propia licencia Microsoft 365.
+// Pasos: 1) crear un App Registration en Azure AD de la empresa
+// nueva, 2) crear el sitio SharePoint con las listas Expedientes
+// y Clientes, 3) rellenar aquí abajo, 4) publicar en un repo
+// GitHub Pages propio.
+// ═══════════════════════════════════════════════════════════════
 const CONFIG = {
   clientId:  '33fe1962-33ad-41a8-b647-82e649491105',
   tenantId:  'dc0719cf-1b7a-426b-a68d-e1ac59ba08d7',
@@ -526,7 +539,8 @@ async function guardarExpediente() {
       FechaVisita:      document.getElementById('f-visita').value || null,
       Tecnico:          document.getElementById('f-tecnico').value,
       Facturaci_x00f3_n: document.getElementById('f-factura').value,
-      Notas:            document.getElementById('f-notas').value.trim()
+      Notas:            document.getElementById('f-notas').value.trim(),
+      EsParticular:     document.getElementById('f-particular').checked
     };
     if (!editando) {
       fields.Estado = 'PARA VISITAR';
@@ -547,6 +561,7 @@ async function guardarExpediente() {
     document.getElementById('f-desc').value = '';
     resetRefs();
     document.getElementById('f-muni').value = '';
+    document.getElementById('f-particular').checked = false;
     document.getElementById('f-visita').value = '';
     document.getElementById('f-tecnico').value = '';
     document.getElementById('f-notas').value = '';
@@ -582,6 +597,7 @@ function editarExpediente(id) {
     <button type="button" class="row-act" onclick="quitarRef(this)" title="Quitar" style="flex:0 0 auto">✕</button>
   </div>`).join('');
   document.getElementById('f-muni').value = e.Municipio || '';
+  document.getElementById('f-particular').checked = !!e.EsParticular;
   document.getElementById('f-fecha').value = e.FechaAlta ? e.FechaAlta.split('T')[0] : '';
   document.getElementById('f-visita').value = e.FechaVisita ? e.FechaVisita.split('T')[0] : '';
   document.getElementById('f-tecnico').value = e.Tecnico || '';
@@ -607,6 +623,7 @@ function irANuevoExpediente() {
   document.getElementById('f-desc').value = '';
   resetRefs();
   document.getElementById('f-muni').value = '';
+  document.getElementById('f-particular').checked = false;
   document.getElementById('f-visita').value = '';
   document.getElementById('f-tecnico').value = '';
   document.getElementById('f-notas').value = '';
@@ -710,7 +727,7 @@ async function verDetalle(id) {
       <div class="det-field"><label>Técnico</label><p>${e.Tecnico||'—'}</p></div>
       <div class="det-field"><label>Facturación</label><p>${e.Facturaci_x00f3_n||'—'}</p></div>
       <div class="det-field"><label>Carpetas</label><p>${e.CarpetasCreadas?'✅ Creadas':'⏳ Pendiente'}</p></div>
-      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">Z:\\${san(e.Cliente||'')}\\OBRAS ${new Date().getFullYear()}\\${e.NumeroExpediente}_${san(e.Descripcion||'')}</p></div>
+      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${e.EsParticular ? `Z:\\\\GESIOS DEL LEVANTE SL\\\\OBRAS ${(e.FechaAlta||new Date().toISOString()).slice(0,4)} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}` : `Z:\\\\${san(e.Cliente||'')}\\\\OBRAS ${(e.FechaAlta||new Date().toISOString()).slice(0,4)}\\\\${e.NumeroExpediente}_${san(e.Descripcion||'')}`}</p></div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
@@ -799,12 +816,24 @@ function resetRefs() {
 function actualizar() {
   const c = document.getElementById('f-cliente').value.trim();
   const d = document.getElementById('f-desc').value.trim();
+  const muni = document.getElementById('f-muni').value.trim();
+  const particular = document.getElementById('f-particular').checked;
   const refs = getRefs();
   const num = document.getElementById('f-num').value;
   const fecha = document.getElementById('f-fecha').value || new Date().getFullYear();
   const año = fecha.toString().substring(0,4);
-  document.getElementById('ruta-l1').innerHTML = `Z:\\${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
-  document.getElementById('ruta-l2').innerHTML = `OBRAS ${año}\\${d?`<span class="ok">${num}_${san(d).substring(0,30)}</span>`:'<span class="pend">expediente</span>'}\\`;
+  const l3 = document.getElementById('ruta-l3');
+  if (particular) {
+    document.getElementById('ruta-l1').innerHTML = `Z:\\<span class="ok">GESIOS DEL LEVANTE SL</span>\\`;
+    document.getElementById('ruta-l2').innerHTML = `OBRAS ${año} PARTICULARES\\`;
+    l3.style.display = '';
+    const nombrePob = c ? san(c) + (muni ? ' ' + san(muni) : '') : '';
+    l3.innerHTML = nombrePob ? `<span class="ok">${nombrePob}</span>\\` : '<span class="pend">nombre cliente y población</span>\\';
+  } else {
+    document.getElementById('ruta-l1').innerHTML = `Z:\\${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
+    document.getElementById('ruta-l2').innerHTML = `OBRAS ${año}\\${d?`<span class="ok">${num}_${san(d).substring(0,30)}</span>`:'<span class="pend">expediente</span>'}\\`;
+    l3.style.display = 'none';
+  }
   const linksDiv = document.getElementById('catastro-links');
   linksDiv.innerHTML = refs.length
     ? refs.map(r => `<a class="catastro-btn" href="#" onclick="abrirCatastroRef('${r.replace(/'/g,"\\'")}'); return false;">🔗 Consultar en el Catastro<span class="ref-tag">${r}</span></a>`).join('')
