@@ -222,6 +222,21 @@ tr:hover td{background:var(--bg)}
                   Cliente particular (no empresa)
                 </label>
               </div>
+              <div class="field" id="field-carpeta-existente">
+                <label>📁 Reutilizar carpeta ya creada (opcional)</label>
+                <select id="f-carpeta-existente" onchange="usarCarpetaExistente()">
+                  <option value="">— Ninguna, calcular ruta nueva —</option>
+                </select>
+                <div style="font-size:10px;color:var(--text2);margin-top:3px">Si este cliente ya tiene carpeta en Z:\, selecciónala para no crear una duplicada.</div>
+                <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-weight:400;cursor:pointer">
+                  <input type="checkbox" id="chk-ruta-manual" onchange="toggleRutaManual()" style="width:auto">
+                  ✏️ Especificar ruta manualmente
+                </label>
+                <div id="field-ruta-manual" style="display:none;margin-top:6px">
+                  <input type="text" id="f-ruta-manual" placeholder="Ej: CLIENTE\OBRAS 2026\26001_DESCRIPCION" oninput="actualizar()" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:11px;font-family:'Courier New',monospace">
+                  <div style="font-size:10px;color:var(--text2);margin-top:3px">Ruta relativa dentro de Z:\ (sin la Z:\ inicial). Se usará tal cual, sin calcularla automáticamente.</div>
+                </div>
+              </div>
               <div class="field" id="field-desc">
                 <label>Descripción de la obra <span class="req">*</span></label>
                 <input type="text" id="f-desc" placeholder="Ej: Desbroce parcela calle Mayor" oninput="actualizar()">
@@ -460,6 +475,8 @@ async function iniciarApp() {
   await getListId();
   await getClientesListId();
   await cargarClientes();
+  await cargarExpedientes();
+  construirSelectCarpetas();
   document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
   nav('alta');
 }
@@ -540,7 +557,8 @@ async function guardarExpediente() {
       Tecnico:          document.getElementById('f-tecnico').value,
       Facturaci_x00f3_n: document.getElementById('f-factura').value,
       Notas:            document.getElementById('f-notas').value.trim(),
-      EsParticular:     document.getElementById('f-particular').checked
+      EsParticular:     document.getElementById('f-particular').checked,
+      RutaManual:       document.getElementById('chk-ruta-manual').checked ? document.getElementById('f-ruta-manual').value.trim() : ''
     };
     if (!editando) {
       fields.Estado = 'PARA VISITAR';
@@ -566,11 +584,16 @@ async function guardarExpediente() {
     document.getElementById('f-tecnico').value = '';
     document.getElementById('f-notas').value = '';
     document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
+    document.getElementById('f-carpeta-existente').value = '';
+    document.getElementById('chk-ruta-manual').checked = false;
+    document.getElementById('f-ruta-manual').value = '';
+    document.getElementById('field-ruta-manual').style.display = 'none';
     actualizar();
     document.getElementById('topbar-title').textContent = 'Nuevo expediente';
     btn.textContent = '📂 Crear expediente';
     if (editando) {
       await cargarExpedientes();
+      construirSelectCarpetas();
       nav('detalle');
       verDetalle(idVuelta);
     } else {
@@ -603,6 +626,11 @@ function editarExpediente(id) {
   document.getElementById('f-tecnico').value = e.Tecnico || '';
   document.getElementById('f-factura').value = e.Facturaci_x00f3_n || '';
   document.getElementById('f-notas').value = e.Notas || '';
+  document.getElementById('f-carpeta-existente').value = '';
+  const tieneRutaManual = !!(e.RutaManual && e.RutaManual.trim());
+  document.getElementById('chk-ruta-manual').checked = tieneRutaManual;
+  document.getElementById('field-ruta-manual').style.display = tieneRutaManual ? '' : 'none';
+  document.getElementById('f-ruta-manual').value = e.RutaManual || '';
   document.getElementById('topbar-title').textContent = 'Editar expediente';
   const btn = document.getElementById('btn-guardar');
   btn.textContent = '💾 Guardar cambios';
@@ -628,6 +656,10 @@ function irANuevoExpediente() {
   document.getElementById('f-tecnico').value = '';
   document.getElementById('f-notas').value = '';
   document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('f-carpeta-existente').value = '';
+  document.getElementById('chk-ruta-manual').checked = false;
+  document.getElementById('f-ruta-manual').value = '';
+  document.getElementById('field-ruta-manual').style.display = 'none';
   document.getElementById('topbar-title').textContent = 'Nuevo expediente';
   document.getElementById('btn-guardar').textContent = '📂 Crear expediente';
   actualizar();
@@ -641,7 +673,7 @@ function nav(s) {
   document.getElementById('topbar-title').textContent = navTitles[s] || s;
   if (s === 'dashboard') cargarDashboard();
   if (s === 'expedientes') cargarTablaExpedientes();
-  if (s === 'alta') limpiarErrores();
+  if (s === 'alta') { limpiarErrores(); construirSelectCarpetas(); }
 }
 
 // ── DASHBOARD ──────────────────────────────────────
@@ -727,7 +759,7 @@ async function verDetalle(id) {
       <div class="det-field"><label>Técnico</label><p>${e.Tecnico||'—'}</p></div>
       <div class="det-field"><label>Facturación</label><p>${e.Facturaci_x00f3_n||'—'}</p></div>
       <div class="det-field"><label>Carpetas</label><p>${e.CarpetasCreadas?'✅ Creadas':'⏳ Pendiente'}</p></div>
-      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${e.EsParticular ? `Z:\\\\GESIOS DEL LEVANTE SL\\\\OBRAS ${(e.FechaAlta||new Date().toISOString()).slice(0,4)} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}` : `Z:\\\\${san(e.Cliente||'')}\\\\OBRAS ${(e.FechaAlta||new Date().toISOString()).slice(0,4)}\\\\${e.NumeroExpediente}_${san(e.Descripcion||'')}`}</p></div>
+      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${e.RutaManual && e.RutaManual.trim() ? `Z:\\\\${e.RutaManual.trim()} <span style="color:var(--text2);font-style:italic">(ruta manual)</span>` : (e.EsParticular ? `Z:\\\\GESIOS DEL LEVANTE SL\\\\OBRAS ${(e.FechaAlta||new Date().toISOString()).slice(0,4)} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}` : `Z:\\\\${san(e.Cliente||'')}\\\\OBRAS ${(e.FechaAlta||new Date().toISOString()).slice(0,4)}\\\\${e.NumeroExpediente}_${san(e.Descripcion||'')}`)}</p></div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
@@ -784,6 +816,70 @@ function buscarCatastro() {
 // ── HELPERS ────────────────────────────────────────
 function san(t) { return (t||'').trim().replace(/[\\/:*?"<>|]/g,'_'); }
 
+// ── CARPETA EXISTENTE / RUTA MANUAL ─────────────────
+function construirSelectCarpetas() {
+  const sel = document.getElementById('f-carpeta-existente');
+  const vistas = new Map(); // key -> {label, cliente, municipio, particular}
+  (expedientesCache||[]).forEach(e => {
+    const cliente = (e.Cliente||'').trim();
+    if (!cliente) return;
+    const particular = !!e.EsParticular;
+    const municipio = (e.Municipio||'').trim();
+    const key = particular ? `P|${san(cliente).toLowerCase()}|${san(municipio).toLowerCase()}` : `E|${san(cliente).toLowerCase()}`;
+    if (!vistas.has(key)) {
+      const label = particular
+        ? `👤 ${san(cliente)}${municipio?' '+san(municipio):''} (particular)`
+        : `🏢 ${san(cliente)} (empresa)`;
+      vistas.set(key, { label, cliente, municipio, particular });
+    }
+  });
+  const actual = sel.value;
+  sel.innerHTML = '<option value="">— Ninguna, calcular ruta nueva —</option>' +
+    Array.from(vistas.values())
+      .sort((a,b) => a.label.localeCompare(b.label))
+      .map(v => `<option value='${JSON.stringify(v).replace(/'/g,"&#39;")}'>${v.label}</option>`)
+      .join('');
+  sel.value = actual && Array.from(sel.options).some(o=>o.value===actual) ? actual : '';
+}
+
+function usarCarpetaExistente() {
+  const sel = document.getElementById('f-carpeta-existente');
+  if (!sel.value) return;
+  const info = JSON.parse(sel.value);
+  document.getElementById('f-cliente').value = info.cliente;
+  document.getElementById('f-particular').checked = info.particular;
+  document.getElementById('f-muni').value = info.municipio || '';
+  document.getElementById('chk-ruta-manual').checked = false;
+  toggleRutaManual();
+  actualizar();
+}
+
+function calcularRutaRelativa() {
+  const c = san(document.getElementById('f-cliente').value.trim());
+  const d = san(document.getElementById('f-desc').value.trim());
+  const muni = san(document.getElementById('f-muni').value.trim());
+  const particular = document.getElementById('f-particular').checked;
+  const num = san(document.getElementById('f-num').value.trim());
+  const fecha = document.getElementById('f-fecha').value || new Date().getFullYear();
+  const año = fecha.toString().substring(0,4);
+  if (particular) {
+    const nombrePob = c + (muni ? ' ' + muni : '');
+    return `GESIOS DEL LEVANTE SL\\OBRAS ${año} PARTICULARES\\${nombrePob}`;
+  }
+  return `${c}\\OBRAS ${año}\\${num}_${d}`;
+}
+
+function toggleRutaManual() {
+  const chk = document.getElementById('chk-ruta-manual').checked;
+  document.getElementById('field-ruta-manual').style.display = chk ? '' : 'none';
+  if (chk) {
+    const input = document.getElementById('f-ruta-manual');
+    if (!input.value) input.value = calcularRutaRelativa();
+    document.getElementById('f-carpeta-existente').value = '';
+  }
+  actualizar();
+}
+
 function getRefs() {
   return Array.from(document.querySelectorAll('.f-ref-item')).map(i => i.value.trim()).filter(Boolean);
 }
@@ -823,7 +919,14 @@ function actualizar() {
   const fecha = document.getElementById('f-fecha').value || new Date().getFullYear();
   const año = fecha.toString().substring(0,4);
   const l3 = document.getElementById('ruta-l3');
-  if (particular) {
+  const rutaManualOn = document.getElementById('chk-ruta-manual').checked;
+  const rutaManualVal = document.getElementById('f-ruta-manual').value.trim();
+  if (rutaManualOn) {
+    const partes = rutaManualVal.split('\\').filter(Boolean);
+    document.getElementById('ruta-l1').innerHTML = `Z:\\${partes[0]?`<span class="ok">${partes[0]}</span>`:'<span class="pend">ruta manual</span>'}\\`;
+    document.getElementById('ruta-l2').innerHTML = partes.slice(1).length ? `<span class="ok">${partes.slice(1).join('\\\\')}</span>\\` : '';
+    l3.style.display = 'none';
+  } else if (particular) {
     document.getElementById('ruta-l1').innerHTML = `Z:\\<span class="ok">GESIOS DEL LEVANTE SL</span>\\`;
     document.getElementById('ruta-l2').innerHTML = `OBRAS ${año} PARTICULARES\\`;
     l3.style.display = '';
