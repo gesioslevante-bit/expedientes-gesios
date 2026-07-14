@@ -303,28 +303,6 @@ tr:hover td{background:var(--bg)}
               <div class="step-item"><div class="step-num">5</div><div><div class="sname">Ejecución</div><div class="sdesc">Fotos durante y final</div></div></div>
               <div class="step-item"><div class="step-num">6</div><div><div class="sname">Facturación</div><div class="sdesc">Desde ClassicGes</div></div></div>
             </div>
-            <div class="ruta-box">
-              <h3>Carpeta que se creará</h3>
-              <div class="ruta-path-wrap">
-                <div class="ruta-line" id="ruta-l1">Z:\<span class="pend">cliente</span>\</div>
-                <div class="ruta-line" id="ruta-l2" style="padding-left:10px">OBRAS 2026\<span class="pend">expediente</span>\</div>
-                <div class="ruta-line" id="ruta-l3" style="padding-left:20px;display:none"></div>
-              </div>
-              <div class="subs">
-                <div class="sub-item">📁 01_Catastro</div>
-                <div class="sub-item">📁 02_Email_Cliente</div>
-                <div class="sub-item">📁 03_Fotos_Inicial</div>
-                <div class="sub-item">📁 04_Presupuesto</div>
-                <div class="sub-item">📁 05_Fotos_Durante</div>
-                <div class="sub-item">📁 06_Fotos_Final</div>
-                <div class="sub-item" style="grid-column:1/-1">📁 07_Factura</div>
-              </div>
-              <div class="chk-list">
-                <div class="chk pend" id="chk-cliente"><span class="chk-dot"></span><span>Cliente</span><span class="chk-val">Sin rellenar</span></div>
-                <div class="chk pend" id="chk-desc"><span class="chk-dot"></span><span>Descripción</span><span class="chk-val">Sin rellenar</span></div>
-                <div class="chk pend" id="chk-ref"><span class="chk-dot"></span><span>Ref. catastral</span><span class="chk-val">Sin rellenar</span></div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -846,34 +824,10 @@ function actualizar() {
   const muni = document.getElementById('f-muni').value.trim();
   const particular = document.getElementById('f-particular').checked;
   const refs = getRefs();
-  const num = document.getElementById('f-num').value;
-  const fecha = document.getElementById('f-fecha').value || new Date().getFullYear();
-  const año = fecha.toString().substring(0,4);
-  const l3 = document.getElementById('ruta-l3');
-  if (particular) {
-    document.getElementById('ruta-l1').innerHTML = `Z:\\<span class="ok">GESIOS DEL LEVANTE, SL</span>\\`;
-    document.getElementById('ruta-l2').innerHTML = `OBRAS ${año} PARTICULARES\\`;
-    l3.style.display = '';
-    const nombrePob = c ? san(c) + (muni ? ' ' + san(muni) : '') : '';
-    l3.innerHTML = nombrePob ? `<span class="ok">${nombrePob}</span>\\` : '<span class="pend">nombre cliente y población</span>\\';
-  } else {
-    document.getElementById('ruta-l1').innerHTML = `Z:\\<span class="ok">DATOS</span>\\${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
-    document.getElementById('ruta-l2').innerHTML = `OBRAS ${año}\\${d?`<span class="ok">${num}_${san(d).substring(0,30)}</span>`:'<span class="pend">expediente</span>'}\\`;
-    l3.style.display = 'none';
-  }
   const linksDiv = document.getElementById('catastro-links');
   linksDiv.innerHTML = refs.length
     ? refs.map(r => `<a class="catastro-btn" href="#" onclick="abrirCatastroRef('${r.replace(/'/g,"\\'")}'); return false;">🔗 Consultar en el Catastro<span class="ref-tag">${r}</span></a>`).join('')
     : `<a class="catastro-btn" href="#" onclick="return false;">🔗 Consultar en el Catastro<span class="ref-tag">Introduce la referencia</span></a>`;
-  setChk('chk-cliente', !!c, 'Cliente', c?c.substring(0,20):'Sin rellenar');
-  setChk('chk-desc', !!d, 'Descripción', d?d.substring(0,20):'Sin rellenar');
-  setChk('chk-ref', refs.length>0, 'Ref. catastral', refs.length?refs.join(', ').substring(0,18):'Sin rellenar');
-}
-
-function setChk(id, ok, label, val) {
-  const el = document.getElementById(id);
-  el.className = 'chk ' + (ok ? 'ok' : 'pend');
-  el.innerHTML = `<span class="chk-dot"></span><span>${label}</span><span class="chk-val">${val}</span>`;
 }
 
 function validar() {
