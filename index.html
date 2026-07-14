@@ -214,21 +214,21 @@ tr:hover td{background:var(--bg)}
               </div>
               <div class="field" id="field-cliente">
                 <label>Cliente <span class="req">*</span></label>
-                <input type="text" id="f-cliente" list="lista-clientes" placeholder="Nombre del cliente" oninput="actualizar()">
+                <select id="f-carpeta-conocida" onchange="elegirCarpetaConocida()" style="margin-bottom:6px">
+                  <option value="">— Elegir carpeta conocida (opcional) —</option>
+                  <option value="ASSISTA">ASSISTA</option>
+                  <option value="FERROVIAL">FERROVIAL</option>
+                  <option value="GRUPO AVANZA">GRUPO AVANZA</option>
+                  <option value="REFORVEN">REFORVEN</option>
+                  <option value="__PARTICULAR__">👤 Cliente particular (GESIOS DEL LEVANTE, SL)</option>
+                </select>
+                <input type="text" id="f-cliente" list="lista-clientes" placeholder="O escribe el nombre del cliente" oninput="actualizar()">
                 <datalist id="lista-clientes"></datalist>
                 <div class="error-msg">Introduce el nombre del cliente</div>
-              </div>
-              <div class="field" id="field-carpeta-destino">
-                <label>📁 Carpeta destino <span class="req">*</span></label>
-                <select id="f-carpeta-destino" onchange="sincronizarCarpetaDestino()">
-                  <option value="Z|E">Z:\ — Empresa</option>
-                  <option value="Z|P">Z:\ — Particular</option>
-                  <option value="DATOS|E">Z:\DATOS\ — Empresa</option>
-                  <option value="DATOS|P">Z:\DATOS\ — Particular</option>
-                </select>
-                <div style="font-size:10px;color:var(--text2);margin-top:3px">Elige dónde y con qué estructura se creará la carpeta del cliente.</div>
-                <input type="checkbox" id="f-particular" style="display:none">
-                <input type="hidden" id="f-ubicacion-base" value="">
+                <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-weight:400;cursor:pointer">
+                  <input type="checkbox" id="f-particular" onchange="actualizar()" style="width:auto">
+                  Cliente particular (no empresa)
+                </label>
               </div>
               <div class="field" id="field-desc">
                 <label>Descripción de la obra <span class="req">*</span></label>
@@ -549,8 +549,7 @@ async function guardarExpediente() {
       Tecnico:          document.getElementById('f-tecnico').value,
       Facturaci_x00f3_n: document.getElementById('f-factura').value,
       Notas:            document.getElementById('f-notas').value.trim(),
-      EsParticular:     document.getElementById('f-particular').checked,
-      UbicacionBase:    document.getElementById('f-ubicacion-base').value
+      EsParticular:     document.getElementById('f-particular').checked
     };
     if (!editando) {
       fields.Estado = 'PARA VISITAR';
@@ -571,9 +570,8 @@ async function guardarExpediente() {
     document.getElementById('f-desc').value = '';
     resetRefs();
     document.getElementById('f-muni').value = '';
-    document.getElementById('f-carpeta-destino').value = 'Z|E';
+    document.getElementById('f-carpeta-conocida').value = '';
     document.getElementById('f-particular').checked = false;
-    document.getElementById('f-ubicacion-base').value = '';
     document.getElementById('f-visita').value = '';
     document.getElementById('f-tecnico').value = '';
     document.getElementById('f-notas').value = '';
@@ -610,8 +608,7 @@ function editarExpediente(id) {
   </div>`).join('');
   document.getElementById('f-muni').value = e.Municipio || '';
   document.getElementById('f-particular').checked = !!e.EsParticular;
-  document.getElementById('f-ubicacion-base').value = e.UbicacionBase || '';
-  document.getElementById('f-carpeta-destino').value = `${e.UbicacionBase === 'DATOS' ? 'DATOS' : 'Z'}|${e.EsParticular ? 'P' : 'E'}`;
+  document.getElementById('f-carpeta-conocida').value = '';
   document.getElementById('f-fecha').value = e.FechaAlta ? e.FechaAlta.split('T')[0] : '';
   document.getElementById('f-visita').value = e.FechaVisita ? e.FechaVisita.split('T')[0] : '';
   document.getElementById('f-tecnico').value = e.Tecnico || '';
@@ -637,9 +634,8 @@ function irANuevoExpediente() {
   document.getElementById('f-desc').value = '';
   resetRefs();
   document.getElementById('f-muni').value = '';
-  document.getElementById('f-carpeta-destino').value = 'Z|E';
+  document.getElementById('f-carpeta-conocida').value = '';
   document.getElementById('f-particular').checked = false;
-  document.getElementById('f-ubicacion-base').value = '';
   document.getElementById('f-visita').value = '';
   document.getElementById('f-tecnico').value = '';
   document.getElementById('f-notas').value = '';
@@ -743,7 +739,7 @@ async function verDetalle(id) {
       <div class="det-field"><label>Técnico</label><p>${e.Tecnico||'—'}</p></div>
       <div class="det-field"><label>Facturación</label><p>${e.Facturaci_x00f3_n||'—'}</p></div>
       <div class="det-field"><label>Carpetas</label><p>${e.CarpetasCreadas?'✅ Creadas':'⏳ Pendiente'}</p></div>
-      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${(() => { const base = e.UbicacionBase ? `${e.UbicacionBase}\\\\` : ''; const anio = (e.FechaAlta||new Date().toISOString()).slice(0,4); if (e.EsParticular) return `Z:\\\\${base}GESIOS DEL LEVANTE SL\\\\OBRAS ${anio} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}`; return `Z:\\\\${base}${san(e.Cliente||'')}\\\\OBRAS ${anio}\\\\${e.NumeroExpediente}_${san(e.Descripcion||'')}`; })()}</p></div>
+      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${(() => { const anio = (e.FechaAlta||new Date().toISOString()).slice(0,4); if (e.EsParticular) return `Z:\\\\GESIOS DEL LEVANTE, SL\\\\OBRAS ${anio} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}`; return `Z:\\\\DATOS\\\\${san(e.Cliente||'')}\\\\OBRAS ${anio}\\\\${e.NumeroExpediente}_${san(e.Descripcion||'')}`; })()}</p></div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
@@ -800,11 +796,18 @@ function buscarCatastro() {
 // ── HELPERS ────────────────────────────────────────
 function san(t) { return (t||'').trim().replace(/[\\/:*?"<>|]/g,'_'); }
 
-// ── CARPETA DESTINO (Z:\ / Z:\DATOS\ × Empresa / Particular) ──
-function sincronizarCarpetaDestino() {
-  const [base, tipo] = document.getElementById('f-carpeta-destino').value.split('|');
-  document.getElementById('f-ubicacion-base').value = base === 'DATOS' ? 'DATOS' : '';
-  document.getElementById('f-particular').checked = (tipo === 'P');
+// ── CARPETA CONOCIDA (lista fija de carpetas reales en Z:\DATOS\) ──
+function elegirCarpetaConocida() {
+  const val = document.getElementById('f-carpeta-conocida').value;
+  if (!val) return;
+  if (val === '__PARTICULAR__') {
+    document.getElementById('f-particular').checked = true;
+    document.getElementById('f-cliente').value = '';
+    document.getElementById('f-cliente').focus();
+  } else {
+    document.getElementById('f-particular').checked = false;
+    document.getElementById('f-cliente').value = val;
+  }
   actualizar();
 }
 
@@ -847,16 +850,14 @@ function actualizar() {
   const fecha = document.getElementById('f-fecha').value || new Date().getFullYear();
   const año = fecha.toString().substring(0,4);
   const l3 = document.getElementById('ruta-l3');
-  const base = document.getElementById('f-ubicacion-base').value;
-  const basePrefix = base ? `<span class="ok">${base}</span>\\` : '';
   if (particular) {
-    document.getElementById('ruta-l1').innerHTML = `Z:\\${basePrefix}<span class="ok">GESIOS DEL LEVANTE SL</span>\\`;
+    document.getElementById('ruta-l1').innerHTML = `Z:\\<span class="ok">GESIOS DEL LEVANTE, SL</span>\\`;
     document.getElementById('ruta-l2').innerHTML = `OBRAS ${año} PARTICULARES\\`;
     l3.style.display = '';
     const nombrePob = c ? san(c) + (muni ? ' ' + san(muni) : '') : '';
     l3.innerHTML = nombrePob ? `<span class="ok">${nombrePob}</span>\\` : '<span class="pend">nombre cliente y población</span>\\';
   } else {
-    document.getElementById('ruta-l1').innerHTML = `Z:\\${basePrefix}${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
+    document.getElementById('ruta-l1').innerHTML = `Z:\\<span class="ok">DATOS</span>\\${c?`<span class="ok">${san(c)}</span>`:'<span class="pend">cliente</span>'}\\`;
     document.getElementById('ruta-l2').innerHTML = `OBRAS ${año}\\${d?`<span class="ok">${num}_${san(d).substring(0,30)}</span>`:'<span class="pend">expediente</span>'}\\`;
     l3.style.display = 'none';
   }
