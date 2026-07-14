@@ -251,9 +251,10 @@ tr:hover td{background:var(--bg)}
                   <button type="button" class="btn" onclick="añadirRef()" style="font-size:12px;padding:4px 10px">+ Añadir otra referencia</button>
                   <div class="error-msg">Introduce al menos una referencia catastral</div>
                 </div>
-                <div class="field">
-                  <label>Municipio</label>
+                <div class="field" id="field-muni">
+                  <label>Municipio <span class="req">*</span></label>
                   <input type="text" id="f-muni" placeholder="Estivella" oninput="actualizar()">
+                  <div class="error-msg">Introduce el municipio (se usa para el nombre de la carpeta)</div>
                 </div>
               </div>
               <div id="catastro-links"></div>
@@ -717,7 +718,7 @@ async function verDetalle(id) {
       <div class="det-field"><label>Técnico</label><p>${e.Tecnico||'—'}</p></div>
       <div class="det-field"><label>Facturación</label><p>${e.Facturaci_x00f3_n||'—'}</p></div>
       <div class="det-field"><label>Carpetas</label><p>${e.CarpetasCreadas?'✅ Creadas':'⏳ Pendiente'}</p></div>
-      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${(() => { const anio = (e.FechaAlta||new Date().toISOString()).slice(0,4); if (e.EsParticular) return `Z:\\\\GESIOS DEL LEVANTE, SL\\\\OBRAS ${anio} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}`; return `Z:\\\\DATOS\\\\${san(e.Cliente||'')}\\\\OBRAS ${anio}\\\\${e.NumeroExpediente}_${san(e.Descripcion||'')}`; })()}</p></div>
+      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${(() => { const anio = (e.FechaAlta||new Date().toISOString()).slice(0,4); if (e.EsParticular) return `Z:\\\\GESIOS DEL LEVANTE, SL\\\\OBRAS ${anio} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}`; return `Z:\\\\DATOS\\\\${san(e.Cliente||'')}\\\\${anio}\\\\${san(e.Municipio||'')}. OBRA ${e.NumeroExpediente}`; })()}</p></div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
@@ -836,10 +837,12 @@ function validar() {
   const n = document.getElementById('f-num').value.trim();
   const c = document.getElementById('f-cliente').value.trim();
   const d = document.getElementById('f-desc').value.trim();
+  const m = document.getElementById('f-muni').value.trim();
   const r = getRefs().length;
   if (!n) { marcarError('field-num'); err++; }
   if (!c) { marcarError('field-cliente'); err++; }
   if (!d) { marcarError('field-desc'); err++; }
+  if (!m) { marcarError('field-muni'); err++; }
   if (!r) { marcarError('field-ref'); err++; }
   if (err > 0) {
     document.getElementById('validacion-msg').style.display = 'inline-flex';
@@ -849,7 +852,7 @@ function validar() {
 }
 
 function limpiarErrores() {
-  ['field-num','field-cliente','field-desc','field-ref'].forEach(id => {
+  ['field-num','field-cliente','field-desc','field-muni','field-ref'].forEach(id => {
     const f = document.getElementById(id);
     f.classList.remove('has-error');
     f.querySelector('input,select')?.classList.remove('error');
