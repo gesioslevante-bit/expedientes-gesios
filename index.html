@@ -534,14 +534,16 @@ async function guardarExpediente() {
       fields.Estado = 'PARA VISITAR';
       fields.CarpetasCreadas = false;
     }
+    let nuevoId = null;
     if (editando) {
       await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${editandoId}/fields`, fields);
     } else {
-      await graph('POST', `/sites/${siteId}/lists/${listId}/items`, { fields });
+      const creado = await graph('POST', `/sites/${siteId}/lists/${listId}/items`, { fields });
+      nuevoId = creado?.id || null;
     }
     await asegurarCliente(fields.Cliente);
-    toast(editando ? '✅ Expediente ' + fields.NumeroExpediente + ' actualizado.' : '✅ Expediente ' + fields.NumeroExpediente + ' creado. Las carpetas se crearán automáticamente.', 'success');
-    const idVuelta = editandoId;
+    toast(editando ? '✅ Expediente ' + fields.NumeroExpediente + ' actualizado.' : '✅ Expediente ' + fields.NumeroExpediente + ' creado.', 'success');
+    const idVuelta = editando ? editandoId : nuevoId;
     editandoId = null;
     // Resetear formulario
     document.getElementById('f-num').value = '';
@@ -558,7 +560,7 @@ async function guardarExpediente() {
     actualizar();
     document.getElementById('topbar-title').textContent = 'Nuevo expediente';
     btn.textContent = '📂 Crear expediente';
-    if (editando) {
+    if (idVuelta) {
       await cargarExpedientes();
       nav('detalle');
       verDetalle(idVuelta);
@@ -718,7 +720,15 @@ async function verDetalle(id) {
       <div class="det-field"><label>Técnico</label><p>${e.Tecnico||'—'}</p></div>
       <div class="det-field"><label>Facturación</label><p>${e.Facturaci_x00f3_n||'—'}</p></div>
       <div class="det-field"><label>Carpetas</label><p>${e.CarpetasCreadas?'✅ Creadas':'⏳ Pendiente'}</p></div>
-      <div class="det-field"><label>Ruta en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${(() => { const anio = (e.FechaAlta||new Date().toISOString()).slice(0,4); if (e.EsParticular) return `Z:\\\\GESIOS DEL LEVANTE, SL\\\\OBRAS ${anio} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}`; return `Z:\\\\DATOS\\\\${san(e.Cliente||'')}\\\\${anio}\\\\${san(e.Municipio||'')}. OBRA ${e.NumeroExpediente}`; })()}</p></div>
+      <div class="det-field"><label>Ruta orientativa en Z:\\</label><p style="font-family:monospace;font-size:10px;color:var(--blue-dark)">${(() => { const anio = (e.FechaAlta||new Date().toISOString()).slice(0,4); if (e.EsParticular) return `Z:\\\\GESIOS DEL LEVANTE, SL\\\\OBRAS ${anio} PARTICULARES\\\\${san(e.Cliente||'')}${e.Municipio?' '+san(e.Municipio):''}`; return `Z:\\\\DATOS\\\\${san(e.Cliente||'')}\\\\${anio}\\\\${san(e.Municipio||'')}. OBRA ${e.NumeroExpediente}`; })()}</p></div>
+    </div>
+    <div style="padding:0 16px 16px">
+      <div class="form-section" style="margin-bottom:0">
+        <h3><span>📁</span> Crear carpetas del expediente</h3>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Se abrirá el explorador de tu PC (como al "Guardar como" en Word). Navega hasta la carpeta de esta obra en Z:\\ y se crearán dentro las 7 subcarpetas estándar.</p>
+        <button type="button" class="btn" onclick="elegirYCrearCarpetas('${id}')">📁 Elegir carpeta y crear subcarpetas</button>
+        <div id="carpetas-status-${id}" style="margin-top:8px;font-size:12px"></div>
+      </div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
@@ -774,6 +784,39 @@ function buscarCatastro() {
 
 // ── HELPERS ────────────────────────────────────────
 function san(t) { return (t||'').trim().replace(/[\\/:*?"<>|]/g,'_'); }
+
+// ── CREAR CARPETAS A MANO (selector nativo del navegador, tipo "Guardar como") ──
+const SUBCARPETAS_EXPEDIENTE = ['01_Catastro','02_Email_Cliente','03_Fotos_Inicial','04_Presupuesto','05_Fotos_Durante','06_Fotos_Final','07_Factura'];
+
+async function elegirYCrearCarpetas(id) {
+  const statusEl = document.getElementById(`carpetas-status-${id}`);
+  if (!window.showDirectoryPicker) {
+    statusEl.innerHTML = '<span style="color:#c0392b">Esta función solo está disponible en Chrome o Edge en ordenador (no funciona en el móvil, ni en Firefox/Safari).</span>';
+    return;
+  }
+  try {
+    statusEl.textContent = 'Elige la carpeta del expediente en el explorador que se acaba de abrir...';
+    const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    statusEl.textContent = `Creando subcarpetas dentro de "${dirHandle.name}"...`;
+    for (const sub of SUBCARPETAS_EXPEDIENTE) {
+      await dirHandle.getDirectoryHandle(sub, { create: true });
+    }
+    statusEl.innerHTML = `✅ Subcarpetas creadas dentro de "<b>${dirHandle.name}</b>".`;
+    toast(`✅ Carpetas creadas dentro de "${dirHandle.name}"`, 'success');
+    try {
+      await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${id}/fields`, { CarpetasCreadas: true });
+      const exp = expedientesCache.find(e => e.id === id);
+      if (exp) exp.CarpetasCreadas = true;
+      verDetalle(id);
+    } catch (e2) { /* si falla marcar como creadas, no pasa nada grave */ }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      statusEl.textContent = 'Cancelado, no se ha creado nada.';
+    } else {
+      statusEl.innerHTML = `<span style="color:#c0392b">Error: ${err.message}</span>`;
+    }
+  }
+}
 
 // ── CARPETA CONOCIDA (lista fija de carpetas reales en Z:\DATOS\) ──
 function elegirCarpetaConocida() {
