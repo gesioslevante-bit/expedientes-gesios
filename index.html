@@ -304,6 +304,7 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
                     <option value="">— Asignar —</option>
                     <option>Almudena Rubio</option>
                     <option>Sandra Motos</option>
+                    <option>Fernando Flores</option>
                     <option>Gerente</option>
                   </select>
                 </div>
@@ -763,6 +764,12 @@ async function verDetalle(id) {
         <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Se abrirá el explorador de tu PC (como al "Guardar como" en Word). Navega hasta la carpeta de esta obra en Z:\\ y se crearán dentro las 7 subcarpetas estándar.</p>
         <button type="button" class="btn" onclick="elegirYCrearCarpetas('${id}')">📁 Elegir carpeta y crear subcarpetas</button>
         <div id="carpetas-status-${id}" style="margin-top:8px;font-size:12px"></div>
+        <div style="display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft)">
+          <button type="button" class="btn" onclick="subirArchivo('${id}','04_Presupuesto')">📎 Subir presupuesto</button>
+          <button type="button" class="btn" onclick="subirArchivo('${id}','07_Factura')">🧾 Subir factura</button>
+        </div>
+        <p style="font-size:10.5px;color:var(--text3);margin-top:6px">Si aún no has elegido la carpeta de esta obra, te la pedirá primero. El archivo se guarda directamente en la subcarpeta correspondiente.</p>
+        <div id="archivo-status-${id}" style="margin-top:6px;font-size:12px"></div>
       </div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
@@ -822,6 +829,7 @@ function san(t) { return (t||'').trim().replace(/[\\/:*?"<>|]/g,'_'); }
 
 // ── CREAR CARPETAS A MANO (selector nativo del navegador, tipo "Guardar como") ──
 const SUBCARPETAS_EXPEDIENTE = ['01_Catastro','02_Email_Cliente','03_Fotos_Inicial','04_Presupuesto','05_Fotos_Durante','06_Fotos_Final','07_Factura'];
+const carpetaHandles = {}; // id expediente -> FileSystemDirectoryHandle elegido en esta sesión
 
 async function elegirYCrearCarpetas(id) {
   const statusEl = document.getElementById(`carpetas-status-${id}`);
@@ -836,6 +844,7 @@ async function elegirYCrearCarpetas(id) {
     for (const sub of SUBCARPETAS_EXPEDIENTE) {
       await dirHandle.getDirectoryHandle(sub, { create: true });
     }
+    carpetaHandles[id] = dirHandle;
     statusEl.innerHTML = `✅ Subcarpetas creadas dentro de "<b>${dirHandle.name}</b>".`;
     toast(`✅ Carpetas creadas dentro de "${dirHandle.name}"`, 'success');
     try {
@@ -847,6 +856,47 @@ async function elegirYCrearCarpetas(id) {
   } catch (err) {
     if (err.name === 'AbortError') {
       statusEl.textContent = 'Cancelado, no se ha creado nada.';
+    } else {
+      statusEl.innerHTML = `<span style="color:#c0392b">Error: ${err.message}</span>`;
+    }
+  }
+}
+
+// ── SUBIR PRESUPUESTO / FACTURA a la subcarpeta correspondiente ──
+async function subirArchivo(id, subcarpeta) {
+  const statusEl = document.getElementById(`archivo-status-${id}`);
+  if (!window.showDirectoryPicker) {
+    statusEl.innerHTML = '<span style="color:#c0392b">Esta función solo está disponible en Chrome o Edge en ordenador.</span>';
+    return;
+  }
+  try {
+    let dirHandle = carpetaHandles[id];
+    if (!dirHandle) {
+      statusEl.textContent = 'Primero elige la carpeta del expediente en el explorador que se acaba de abrir...';
+      dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      carpetaHandles[id] = dirHandle;
+      // Nos aseguramos de que existan las 7 subcarpetas estándar por si aún no se habían creado
+      for (const sub of SUBCARPETAS_EXPEDIENTE) {
+        await dirHandle.getDirectoryHandle(sub, { create: true });
+      }
+    }
+    const [fileHandle] = await window.showOpenFilePicker({
+      multiple: false,
+      excludeAcceptAllOption: false,
+      types: [{ description: 'Documentos', accept: { 'application/pdf': ['.pdf'], 'application/vnd.ms-excel': ['.xls'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 'image/*': ['.jpg','.jpeg','.png'] } }]
+    });
+    const file = await fileHandle.getFile();
+    statusEl.textContent = `Copiando "${file.name}" a ${subcarpeta}...`;
+    const subHandle = await dirHandle.getDirectoryHandle(subcarpeta, { create: true });
+    const destHandle = await subHandle.getFileHandle(file.name, { create: true });
+    const writable = await destHandle.createWritable();
+    await writable.write(file);
+    await writable.close();
+    statusEl.innerHTML = `✅ "<b>${file.name}</b>" guardado en ${subcarpeta}.`;
+    toast(`✅ Archivo guardado en ${subcarpeta}`, 'success');
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      statusEl.textContent = 'Cancelado, no se ha subido nada.';
     } else {
       statusEl.innerHTML = `<span style="color:#c0392b">Error: ${err.message}</span>`;
     }
