@@ -205,6 +205,7 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
       <div class="nav-item" onclick="nav('dashboard')">🏠 Resumen</div>
       <div class="nav-item active" onclick="irANuevoExpediente()">📂 Nuevo expediente</div>
       <div class="nav-item" onclick="nav('expedientes')">🗂 Expedientes <span class="nav-badge" id="badge-exp">—</span></div>
+      <div class="nav-item" onclick="nav('estados')">📅 Estados</div>
       <div class="nav-item" onclick="nav('busqueda')">🔍 Buscar catastro</div>
     </div>
     <div class="nav-section" style="border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;margin-top:auto">
@@ -357,6 +358,32 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
         </div>
       </div>
 
+      <!-- ESTADOS -->
+      <div id="view-estados" class="view">
+        <div class="card">
+          <div class="card-header">📅 <h2>Estado de expedientes</h2>
+            <div style="display:flex;gap:8px;margin-left:auto">
+              <button class="btn" id="btn-vista-tabla" onclick="cambiarVistaEstados('tabla')">📋 Tabla</button>
+              <button class="btn" id="btn-vista-calendario" onclick="cambiarVistaEstados('calendario')">📅 Calendario</button>
+            </div>
+          </div>
+          <div style="padding:14px 16px;border-bottom:1px solid var(--border-soft)">
+            <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Filtrar por estado (ninguno seleccionado = todos):</div>
+            <div id="filtros-estados" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+          </div>
+          <div id="estados-vista-tabla"><div id="estados-tabla"><div class="loading"><div class="spinner"></div>Cargando...</div></div></div>
+          <div id="estados-vista-calendario" style="display:none">
+            <div style="display:flex;align-items:center;gap:10px;padding:14px 16px">
+              <button class="btn" onclick="calMesAnterior()">← Mes anterior</button>
+              <div id="cal-mes-titulo" style="font-weight:600;font-size:13px;min-width:150px;text-align:center">—</div>
+              <button class="btn" onclick="calMesSiguiente()">Mes siguiente →</button>
+              <div style="margin-left:auto;font-size:11px;color:var(--text2)">Solo se muestran expedientes en fase AGENDADA</div>
+            </div>
+            <div id="calendario-estados" style="padding:0 16px 16px"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- BUSQUEDA CATASTRAL -->
       <div id="view-busqueda" class="view">
         <div class="busq-layout">
@@ -435,6 +462,12 @@ let clientesCache = [];
 let editandoId = null;
 let expedientesCache = [];
 let numExpediente = '';
+
+// ── ESTADOS (panel de filtros + calendario) ─────────
+const ESTADOS_FASE = ['PARA VISITAR','VISITADA','PRESUPUESTO ENVIADO','PENDIENTE DE APROBACION','AGENDADA','EN EJECUCION','FINALIZADA','FACTURADA','COBRADA'];
+let filtroEstadosPanel = new Set();
+let vistaEstadosPanel = 'tabla';
+let calMesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
 // ── AUTH ───────────────────────────────────────────
 async function init() {
@@ -640,9 +673,9 @@ function editarExpediente(id) {
 // ── VISTAS ─────────────────────────────────────────
 const navTitles = {
   dashboard:'Resumen general', alta:'Nuevo expediente',
-  expedientes:'Expedientes', busqueda:'Buscar por referencia catastral', detalle:'Ficha de expediente'
+  expedientes:'Expedientes', estados:'Estado de expedientes', busqueda:'Buscar por referencia catastral', detalle:'Ficha de expediente'
 };
-const navOrder = ['dashboard','alta','expedientes','busqueda'];
+const navOrder = ['dashboard','alta','expedientes','estados','busqueda'];
 
 function irANuevoExpediente() {
   editandoId = null;
@@ -670,6 +703,7 @@ function nav(s) {
   document.getElementById('topbar-title').textContent = navTitles[s] || s;
   if (s === 'dashboard') cargarDashboard();
   if (s === 'expedientes') cargarTablaExpedientes();
+  if (s === 'estados') cargarEstadosPanel();
   if (s === 'alta') limpiarErrores();
 }
 
@@ -734,13 +768,104 @@ function filtrarExpedientes() {
   document.getElementById('exp-tabla').innerHTML = tablaExpedientesHTML(exps);
 }
 
+// ── PANEL DE ESTADOS (filtros + calendario) ────────
+async function cargarEstadosPanel() {
+  renderFiltrosEstados();
+  document.getElementById('estados-tabla').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>';
+  await cargarExpedientes();
+  renderEstadosPanel();
+}
+
+function renderFiltrosEstados() {
+  document.getElementById('filtros-estados').innerHTML = ESTADOS_FASE.map(s => {
+    const activo = filtroEstadosPanel.has(s);
+    return `<span class="badge ${activo?'b-blue':'b-gray'}" style="cursor:pointer;user-select:none" onclick="toggleFiltroEstado('${s}')">${activo?'✓ ':''}${s}</span>`;
+  }).join('');
+}
+
+function toggleFiltroEstado(estado) {
+  if (filtroEstadosPanel.has(estado)) filtroEstadosPanel.delete(estado);
+  else filtroEstadosPanel.add(estado);
+  renderFiltrosEstados();
+  renderEstadosPanel();
+}
+
+function renderEstadosPanel() {
+  const exps = filtroEstadosPanel.size
+    ? expedientesCache.filter(e => filtroEstadosPanel.has(e.Estado))
+    : expedientesCache;
+  if (vistaEstadosPanel === 'tabla') {
+    document.getElementById('estados-tabla').innerHTML = tablaExpedientesHTML(exps);
+  } else {
+    renderCalendarioEstados(exps);
+  }
+}
+
+function cambiarVistaEstados(v) {
+  vistaEstadosPanel = v;
+  document.getElementById('estados-vista-tabla').style.display = v === 'tabla' ? '' : 'none';
+  document.getElementById('estados-vista-calendario').style.display = v === 'calendario' ? '' : 'none';
+  document.getElementById('btn-vista-tabla').classList.toggle('btn-primary', v === 'tabla');
+  document.getElementById('btn-vista-calendario').classList.toggle('btn-primary', v === 'calendario');
+  renderEstadosPanel();
+}
+
+function calMesAnterior() { calMesActual = new Date(calMesActual.getFullYear(), calMesActual.getMonth()-1, 1); renderEstadosPanel(); }
+function calMesSiguiente() { calMesActual = new Date(calMesActual.getFullYear(), calMesActual.getMonth()+1, 1); renderEstadosPanel(); }
+
+function renderCalendarioEstados(exps) {
+  const agendados = exps.filter(e => e.Estado === 'AGENDADA' && e.FechaInicioEjecucion);
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  document.getElementById('cal-mes-titulo').textContent = `${meses[calMesActual.getMonth()]} ${calMesActual.getFullYear()}`;
+
+  // Construir mapa día -> lista de expedientes que ocupan ese día
+  const porDia = {};
+  agendados.forEach(e => {
+    const inicio = new Date(e.FechaInicioEjecucion.split('T')[0] + 'T00:00:00');
+    const dias = parseInt(e.DiasEstimados, 10) || 1;
+    for (let i = 0; i < dias; i++) {
+      const d = new Date(inicio);
+      d.setDate(d.getDate() + i);
+      const key = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      (porDia[key] = porDia[key] || []).push(e);
+    }
+  });
+
+  const primerDiaMes = new Date(calMesActual.getFullYear(), calMesActual.getMonth(), 1);
+  const ultimoDiaMes = new Date(calMesActual.getFullYear(), calMesActual.getMonth()+1, 0);
+  // Lunes=0 ... Domingo=6
+  const offsetInicio = (primerDiaMes.getDay() + 6) % 7;
+  const totalDias = ultimoDiaMes.getDate();
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+
+  let celdas = '';
+  for (let i = 0; i < offsetInicio; i++) celdas += `<div style="background:var(--bg);border-radius:var(--radius);min-height:80px"></div>`;
+  for (let d = 1; d <= totalDias; d++) {
+    const key = calMesActual.getFullYear()+'-'+String(calMesActual.getMonth()+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    const fecha = new Date(calMesActual.getFullYear(), calMesActual.getMonth(), d);
+    const esHoy = fecha.getTime() === hoy.getTime();
+    const items = porDia[key] || [];
+    celdas += `<div style="background:#fff;border:1px solid var(--border-soft);border-radius:var(--radius);min-height:80px;padding:6px;${esHoy?'outline:2px solid var(--blue)':''}">
+      <div style="font-size:11px;font-weight:600;color:${esHoy?'var(--blue)':'var(--text2)'};margin-bottom:4px">${d}</div>
+      ${items.map(e=>`<div title="${e.Cliente||''} — ${e.Descripcion||''}" onclick="verDetalle('${e.id}')" style="cursor:pointer;font-size:10.5px;background:var(--blue-050,#eaf2fb);color:var(--blue-dark);border-radius:4px;padding:2px 5px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.NumeroExpediente||'—'}</div>`).join('')}
+    </div>`;
+  }
+
+  document.getElementById('calendario-estados').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">
+      ${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d=>`<div style="font-size:10.5px;font-weight:600;color:var(--text2);text-align:center;padding:4px 0">${d}</div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${celdas}</div>
+    ${!agendados.length?'<div class="loading" style="margin-top:10px">No hay expedientes agendados con fecha de ejecución en el filtro actual.</div>':''}
+  `;
+}
+
 // ── DETALLE ────────────────────────────────────────
 async function verDetalle(id) {
   nav('detalle');
   const e = expedientesCache.find(x => x.id === id) || {};
-  const estados = ['PARA VISITAR','VISITADA','PRESUPUESTO ENVIADO','PENDIENTE DE APROBACION','AGENDADA','EN EJECUCION','FINALIZADA','FACTURADA','COBRADA'];
-  const idxActual = estados.indexOf(e.Estado);
-  const fasesHTML = estados.map((s,i) => {
+  const idxActual = ESTADOS_FASE.indexOf(e.Estado);
+  const fasesHTML = ESTADOS_FASE.map((s,i) => {
     const cls = i < idxActual ? 'done' : i === idxActual ? 'current' : '';
     return `<div class="fase-chip ${cls}" onclick="cambiarEstado('${id}','${s}')">${s}</div>`;
   }).join('');
@@ -761,19 +886,28 @@ async function verDetalle(id) {
     <div style="padding:0 16px 16px">
       <div class="form-section" style="margin-bottom:0">
         <h3><span>📁</span> Crear carpetas del expediente</h3>
-        <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Se abrirá el explorador de tu PC (como al "Guardar como" en Word). Navega hasta la carpeta de esta obra en Z:\\ y se crearán dentro las 7 subcarpetas estándar.</p>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Se abrirá el explorador de tu PC (como al "Guardar como" en Word). Navega hasta la carpeta de esta obra en Z:\\ y se crearán dentro las 2 subcarpetas estándar (ESTADO INICIAL y DURANTE Y FINAL).</p>
         <button type="button" class="btn" onclick="elegirYCrearCarpetas('${id}')">📁 Elegir carpeta y crear subcarpetas</button>
         <div id="carpetas-status-${id}" style="margin-top:8px;font-size:12px"></div>
         <div style="display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft)">
-          <button type="button" class="btn" onclick="subirArchivo('${id}','04_Presupuesto')">📎 Subir presupuesto</button>
-          <button type="button" class="btn" onclick="subirArchivo('${id}','07_Factura')">🧾 Subir factura</button>
+          <button type="button" class="btn" onclick="subirArchivo('${id}','')">📎 Subir presupuesto</button>
+          <button type="button" class="btn" onclick="subirArchivo('${id}','')">🧾 Subir factura</button>
         </div>
-        <p style="font-size:10.5px;color:var(--text3);margin-top:6px">Si aún no has elegido la carpeta de esta obra, te la pedirá primero. El archivo se guarda directamente en la subcarpeta correspondiente.</p>
+        <p style="font-size:10.5px;color:var(--text3);margin-top:6px">Si aún no has elegido la carpeta de esta obra, te la pedirá primero. El archivo se guarda directamente en la carpeta del expediente.</p>
         <div id="archivo-status-${id}" style="margin-top:6px;font-size:12px"></div>
       </div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
+    ${['AGENDADA','EN EJECUCION','FINALIZADA','FACTURADA','COBRADA'].includes(e.Estado)?`
+    <div style="padding:14px 16px;border-top:1px solid var(--border-soft)">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">📅 Fecha de ejecución (para el calendario)</div>
+      <div class="field-row">
+        <div class="field"><label>Fecha de inicio</label><input type="date" id="fe-inicio-${id}" value="${e.FechaInicioEjecucion?e.FechaInicioEjecucion.split('T')[0]:''}"></div>
+        <div class="field"><label>Días estimados</label><input type="number" min="1" id="fe-dias-${id}" value="${e.DiasEstimados||1}"></div>
+      </div>
+      <button type="button" class="btn" onclick="guardarFechasEjecucion('${id}')">💾 Guardar fecha de ejecución</button>
+    </div>`:''}
     ${e.Notas?`<div style="padding:0 16px 16px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">Notas</div><div style="font-size:12px;background:var(--bg);padding:8px 10px;border-radius:var(--radius)">${e.Notas}</div></div>`:''}
     <div style="padding:0 16px 16px;text-align:right;display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="editarExpediente('${id}')">✏️ Editar expediente</button>
@@ -806,6 +940,20 @@ async function cambiarEstado(id, nuevoEstado) {
   }
 }
 
+async function guardarFechasEjecucion(id) {
+  const inicio = document.getElementById('fe-inicio-'+id).value;
+  const dias = parseInt(document.getElementById('fe-dias-'+id).value, 10) || 1;
+  if (!inicio) { toast('❌ Indica una fecha de inicio', 'error'); return; }
+  try {
+    await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${id}/fields`, { FechaInicioEjecucion: inicio, DiasEstimados: dias });
+    const exp = expedientesCache.find(e => e.id === id);
+    if (exp) { exp.FechaInicioEjecucion = inicio; exp.DiasEstimados = dias; }
+    toast('✅ Fecha de ejecución guardada', 'success');
+  } catch(e) {
+    toast('❌ Error: ' + e.message, 'error');
+  }
+}
+
 // ── BUSQUEDA CATASTRAL ─────────────────────────────
 function buscarCatastro() {
   const q = document.getElementById('busq-ref').value.trim().toUpperCase();
@@ -828,7 +976,7 @@ function buscarCatastro() {
 function san(t) { return (t||'').trim().replace(/[\\/:*?"<>|]/g,'_'); }
 
 // ── CREAR CARPETAS A MANO (selector nativo del navegador, tipo "Guardar como") ──
-const SUBCARPETAS_EXPEDIENTE = ['01_Catastro','02_Email_Cliente','03_Fotos_Inicial','04_Presupuesto','05_Fotos_Durante','06_Fotos_Final','07_Factura'];
+const SUBCARPETAS_EXPEDIENTE = ['ESTADO INICIAL','DURANTE Y FINAL'];
 const carpetaHandles = {}; // id expediente -> FileSystemDirectoryHandle elegido en esta sesión
 
 async function elegirYCrearCarpetas(id) {
@@ -875,7 +1023,7 @@ async function subirArchivo(id, subcarpeta) {
       statusEl.textContent = 'Primero elige la carpeta del expediente en el explorador que se acaba de abrir...';
       dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
       carpetaHandles[id] = dirHandle;
-      // Nos aseguramos de que existan las 7 subcarpetas estándar por si aún no se habían creado
+      // Nos aseguramos de que existan las 2 subcarpetas estándar por si aún no se habían creado
       for (const sub of SUBCARPETAS_EXPEDIENTE) {
         await dirHandle.getDirectoryHandle(sub, { create: true });
       }
@@ -886,14 +1034,15 @@ async function subirArchivo(id, subcarpeta) {
       types: [{ description: 'Documentos', accept: { 'application/pdf': ['.pdf'], 'application/vnd.ms-excel': ['.xls'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 'image/*': ['.jpg','.jpeg','.png'] } }]
     });
     const file = await fileHandle.getFile();
-    statusEl.textContent = `Copiando "${file.name}" a ${subcarpeta}...`;
-    const subHandle = await dirHandle.getDirectoryHandle(subcarpeta, { create: true });
-    const destHandle = await subHandle.getFileHandle(file.name, { create: true });
+    const destinoLabel = subcarpeta ? subcarpeta : `la carpeta del expediente`;
+    statusEl.textContent = `Copiando "${file.name}" a ${destinoLabel}...`;
+    const targetHandle = subcarpeta ? await dirHandle.getDirectoryHandle(subcarpeta, { create: true }) : dirHandle;
+    const destHandle = await targetHandle.getFileHandle(file.name, { create: true });
     const writable = await destHandle.createWritable();
     await writable.write(file);
     await writable.close();
-    statusEl.innerHTML = `✅ "<b>${file.name}</b>" guardado en ${subcarpeta}.`;
-    toast(`✅ Archivo guardado en ${subcarpeta}`, 'success');
+    statusEl.innerHTML = `✅ "<b>${file.name}</b>" guardado en ${destinoLabel}.`;
+    toast(`✅ Archivo guardado en ${destinoLabel}`, 'success');
   } catch (err) {
     if (err.name === 'AbortError') {
       statusEl.textContent = 'Cancelado, no se ha subido nada.';
