@@ -178,6 +178,8 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
 .spinner{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
+<script>if (window['pdfjsLib']) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';</script>
 </head>
 <body>
 
@@ -206,6 +208,7 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
       <div class="nav-item active" onclick="irANuevoExpediente()">📂 Nuevo expediente</div>
       <div class="nav-item" onclick="nav('expedientes')">🗂 Expedientes <span class="nav-badge" id="badge-exp">—</span></div>
       <div class="nav-item" onclick="nav('estados')">📅 Estados</div>
+      <div class="nav-item" onclick="nav('facturacion')">💶 Facturación</div>
       <div class="nav-item" onclick="nav('busqueda')">🔍 Buscar catastro</div>
     </div>
     <div class="nav-section" style="border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;margin-top:auto">
@@ -381,6 +384,17 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
             </div>
             <div id="calendario-estados" style="padding:0 16px 16px"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- FACTURACION -->
+      <div id="view-facturacion" class="view">
+        <div class="card">
+          <div class="card-header">💶 <h2>Previsión de facturación</h2></div>
+          <div id="facturacion-resumen" style="padding:14px 16px;border-bottom:1px solid var(--border-soft)">
+            <div class="loading"><div class="spinner"></div>Cargando...</div>
+          </div>
+          <div id="facturacion-clientes"></div>
         </div>
       </div>
 
@@ -673,9 +687,9 @@ function editarExpediente(id) {
 // ── VISTAS ─────────────────────────────────────────
 const navTitles = {
   dashboard:'Resumen general', alta:'Nuevo expediente',
-  expedientes:'Expedientes', estados:'Estado de expedientes', busqueda:'Buscar por referencia catastral', detalle:'Ficha de expediente'
+  expedientes:'Expedientes', estados:'Estado de expedientes', facturacion:'Previsión de facturación', busqueda:'Buscar por referencia catastral', detalle:'Ficha de expediente'
 };
-const navOrder = ['dashboard','alta','expedientes','estados','busqueda'];
+const navOrder = ['dashboard','alta','expedientes','estados','facturacion','busqueda'];
 
 function irANuevoExpediente() {
   editandoId = null;
@@ -704,6 +718,7 @@ function nav(s) {
   if (s === 'dashboard') cargarDashboard();
   if (s === 'expedientes') cargarTablaExpedientes();
   if (s === 'estados') cargarEstadosPanel();
+  if (s === 'facturacion') cargarFacturacionPanel();
   if (s === 'alta') limpiarErrores();
 }
 
@@ -860,7 +875,120 @@ function renderCalendarioEstados(exps) {
   `;
 }
 
-// ── DETALLE ────────────────────────────────────────
+// ── LECTURA AUTOMÁTICA DEL IMPORTE DEL PRESUPUESTO ─
+async function extraerImportePDF(file) {
+  if (!window['pdfjsLib'] || file.type !== 'application/pdf') return null;
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    let texto = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      texto += ' ' + content.items.map(it => it.str).join(' ');
+    }
+    // Busca "TOTAL" seguido de un importe en formato español (1.234,56 €)
+    const patrones = [
+      /TOTAL\s*(?:PRESUPUESTO)?\s*[:\.]?\s*([\d.]+,\d{2})\s*€?/i,
+      /IMPORTE\s*TOTAL\s*[:\.]?\s*([\d.]+,\d{2})\s*€?/i,
+      /([\d.]+,\d{2})\s*€\s*$/
+    ];
+    for (const re of patrones) {
+      const m = texto.match(re);
+      if (m) {
+        const num = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+        if (!isNaN(num) && num > 0) return num;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.warn('No se pudo leer el PDF:', e);
+    return null;
+  }
+}
+
+async function subirPresupuesto(id) {
+  const statusEl = document.getElementById(`archivo-status-${id}`);
+  const file = await subirArchivo(id, '');
+  if (!file) return; // cancelado o error
+  statusEl.textContent += ' Leyendo importe del presupuesto...';
+  const importe = await extraerImportePDF(file);
+  if (importe) {
+    document.getElementById(`fac-importe-${id}`).value = importe.toFixed(2);
+    statusEl.innerHTML += ` 💶 Importe detectado: <b>${importe.toFixed(2)} €</b> (revisa y guarda abajo).`;
+  } else {
+    statusEl.innerHTML += ' No se pudo leer el importe automáticamente — introdúcelo a mano abajo.';
+  }
+}
+
+// ── PANEL DE FACTURACIÓN (previsión, agrupado por cliente) ─
+function fmtEUR(n) {
+  return (n||0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+
+async function cargarFacturacionPanel() {
+  document.getElementById('facturacion-resumen').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>';
+  await cargarExpedientes();
+  renderFacturacionPanel();
+}
+
+function renderFacturacionPanel() {
+  const exps = expedientesCache.filter(e => e.Importe != null && e.Importe > 0);
+
+  const totalPresupuestado = exps.reduce((s,e) => s + (e.Importe||0), 0);
+  const totalFacturado = exps.filter(e=>e.EstadoFacturacion==='Facturado').reduce((s,e)=>s+(e.Importe||0),0);
+  const totalCobrado = exps.filter(e=>e.EstadoFacturacion==='Cobrado').reduce((s,e)=>s+(e.Importe||0),0);
+  const totalPendiente = exps.filter(e=>!e.EstadoFacturacion||e.EstadoFacturacion==='Pendiente').reduce((s,e)=>s+(e.Importe||0),0);
+
+  document.getElementById('facturacion-resumen').innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card"><div class="lbl">Presupuestado</div><div class="val">${fmtEUR(totalPresupuestado)}</div></div>
+      <div class="stat-card"><div class="lbl">Facturado</div><div class="val">${fmtEUR(totalFacturado)}</div></div>
+      <div class="stat-card"><div class="lbl">Cobrado</div><div class="val">${fmtEUR(totalCobrado)}</div></div>
+      <div class="stat-card"><div class="lbl">Pendiente</div><div class="val">${fmtEUR(totalPendiente)}</div></div>
+    </div>`;
+
+  // Agrupar por cliente
+  const porCliente = {};
+  exps.forEach(e => {
+    const cli = e.Cliente || 'Sin cliente';
+    (porCliente[cli] = porCliente[cli] || []).push(e);
+  });
+  const clientesOrdenados = Object.keys(porCliente).sort((a,b) => {
+    const totalA = porCliente[a].reduce((s,e)=>s+(e.Importe||0),0);
+    const totalB = porCliente[b].reduce((s,e)=>s+(e.Importe||0),0);
+    return totalB - totalA;
+  });
+
+  if (!clientesOrdenados.length) {
+    document.getElementById('facturacion-clientes').innerHTML = '<div class="loading" style="padding:16px">Aún no hay expedientes con importe guardado. Sube un presupuesto o introduce el importe manualmente en la ficha de cada expediente.</div>';
+    return;
+  }
+
+  document.getElementById('facturacion-clientes').innerHTML = clientesOrdenados.map(cli => {
+    const items = porCliente[cli];
+    const total = items.reduce((s,e)=>s+(e.Importe||0),0);
+    const filas = items.map(e => `
+      <tr style="cursor:pointer" onclick="verDetalle('${e.id}')">
+        <td>${e.NumeroExpediente||'—'}</td>
+        <td>${e.Municipio||'—'}</td>
+        <td>${fmtEUR(e.Importe)}</td>
+        <td><span class="badge ${e.EstadoFacturacion==='Cobrado'?'b-green':e.EstadoFacturacion==='Facturado'?'b-blue':'b-gray'}">${e.EstadoFacturacion||'Pendiente'}</span></td>
+      </tr>`).join('');
+    return `
+      <div style="border-top:1px solid var(--border-soft);padding:12px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-weight:600;font-size:13px">${cli}</div>
+          <div style="font-weight:600;font-size:13px;color:var(--blue-dark)">${fmtEUR(total)}</div>
+        </div>
+        <table style="width:100%">
+          <thead><tr><th>Expediente</th><th>Municipio</th><th>Importe</th><th>Estado</th></tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+}
+
 async function verDetalle(id) {
   nav('detalle');
   const e = expedientesCache.find(x => x.id === id) || {};
@@ -890,7 +1018,7 @@ async function verDetalle(id) {
         <button type="button" class="btn" onclick="elegirYCrearCarpetas('${id}')">📁 Elegir carpeta y crear subcarpetas</button>
         <div id="carpetas-status-${id}" style="margin-top:8px;font-size:12px"></div>
         <div style="display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft)">
-          <button type="button" class="btn" onclick="subirArchivo('${id}','')">📎 Subir presupuesto</button>
+          <button type="button" class="btn" onclick="subirPresupuesto('${id}')">📎 Subir presupuesto</button>
           <button type="button" class="btn" onclick="subirArchivo('${id}','')">🧾 Subir factura</button>
         </div>
         <p style="font-size:10.5px;color:var(--text3);margin-top:6px">Si aún no has elegido la carpeta de esta obra, te la pedirá primero. El archivo se guarda directamente en la carpeta del expediente.</p>
@@ -908,6 +1036,16 @@ async function verDetalle(id) {
       </div>
       <button type="button" class="btn" onclick="guardarFechasEjecucion('${id}')">💾 Guardar fecha de ejecución</button>
     </div>`:''}
+    <div style="padding:14px 16px;border-top:1px solid var(--border-soft)">
+      <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">💶 Facturación</div>
+      <div class="field-row">
+        <div class="field"><label>Importe (€)</label><input type="number" step="0.01" min="0" id="fac-importe-${id}" value="${e.Importe!=null?e.Importe:''}"></div>
+        <div class="field"><label>Estado</label><select id="fac-estado-${id}">
+          ${['Pendiente','Facturado','Cobrado'].map(s=>`<option value="${s}" ${e.EstadoFacturacion===s?'selected':''}>${s}</option>`).join('')}
+        </select></div>
+      </div>
+      <button type="button" class="btn" onclick="guardarFacturacion('${id}')">💾 Guardar facturación</button>
+    </div>
     ${e.Notas?`<div style="padding:0 16px 16px"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">Notas</div><div style="font-size:12px;background:var(--bg);padding:8px 10px;border-radius:var(--radius)">${e.Notas}</div></div>`:''}
     <div style="padding:0 16px 16px;text-align:right;display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="editarExpediente('${id}')">✏️ Editar expediente</button>
@@ -949,6 +1087,20 @@ async function guardarFechasEjecucion(id) {
     const exp = expedientesCache.find(e => e.id === id);
     if (exp) { exp.FechaInicioEjecucion = inicio; exp.DiasEstimados = dias; }
     toast('✅ Fecha de ejecución guardada', 'success');
+  } catch(e) {
+    toast('❌ Error: ' + e.message, 'error');
+  }
+}
+
+async function guardarFacturacion(id) {
+  const importeStr = document.getElementById('fac-importe-'+id).value;
+  const estado = document.getElementById('fac-estado-'+id).value;
+  const importe = importeStr === '' ? null : parseFloat(importeStr);
+  try {
+    await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${id}/fields`, { Importe: importe, EstadoFacturacion: estado });
+    const exp = expedientesCache.find(e => e.id === id);
+    if (exp) { exp.Importe = importe; exp.EstadoFacturacion = estado; }
+    toast('✅ Facturación guardada', 'success');
   } catch(e) {
     toast('❌ Error: ' + e.message, 'error');
   }
@@ -1043,6 +1195,7 @@ async function subirArchivo(id, subcarpeta) {
     await writable.close();
     statusEl.innerHTML = `✅ "<b>${file.name}</b>" guardado en ${destinoLabel}.`;
     toast(`✅ Archivo guardado en ${destinoLabel}`, 'success');
+    return file;
   } catch (err) {
     if (err.name === 'AbortError') {
       statusEl.textContent = 'Cancelado, no se ha subido nada.';
