@@ -899,11 +899,27 @@ async function extraerImportePDF(file) {
       const content = await page.getTextContent();
       texto += ' ' + content.items.map(it => it.str).join(' ');
     }
-    // Busca "TOTAL" seguido de un importe en formato español (1.234,56 €)
+    const importeConEuroRe = /([\d.]+,\d{2})\s*€/g;
+
+    // Estrategia 1: en PDFs tipo tabla (ClassicGes), el importe con € suele aparecer
+    // justo ANTES de la etiqueta "TOTAL PRESUPUESTO"/"TOTAL FACTURA" en el texto extraído
+    // (el orden del texto sigue las celdas de la tabla, no el orden visual).
+    const mEtiqueta = texto.match(/\bTOTAL\s*(?:PRESUPUESTO|FACTURA)?\b/i);
+    if (mEtiqueta) {
+      const antes = texto.slice(0, mEtiqueta.index);
+      let ultimo = null, m;
+      importeConEuroRe.lastIndex = 0;
+      while ((m = importeConEuroRe.exec(antes)) !== null) ultimo = m[1];
+      if (ultimo) {
+        const num = parseFloat(ultimo.replace(/\./g, '').replace(',', '.'));
+        if (!isNaN(num) && num > 0) return num;
+      }
+    }
+
+    // Estrategia 2: patrones directos "TOTAL: importe" (por si el PDF sí sigue ese orden)
     const patrones = [
-      /TOTAL\s*(?:PRESUPUESTO)?\s*[:\.]?\s*([\d.]+,\d{2})\s*€?/i,
-      /IMPORTE\s*TOTAL\s*[:\.]?\s*([\d.]+,\d{2})\s*€?/i,
-      /([\d.]+,\d{2})\s*€\s*$/
+      /\bTOTAL\s*(?:PRESUPUESTO|FACTURA)?\s*[:\.]?\s*([\d.]+,\d{2})\s*€?/i,
+      /\bIMPORTE\s*TOTAL\s*[:\.]?\s*([\d.]+,\d{2})\s*€?/i,
     ];
     for (const re of patrones) {
       const m = texto.match(re);
@@ -912,6 +928,16 @@ async function extraerImportePDF(file) {
         if (!isNaN(num) && num > 0) return num;
       }
     }
+
+    // Estrategia 3: último importe con € de todo el documento (suele ser el total)
+    let ultimoGlobal = null, m3;
+    importeConEuroRe.lastIndex = 0;
+    while ((m3 = importeConEuroRe.exec(texto)) !== null) ultimoGlobal = m3[1];
+    if (ultimoGlobal) {
+      const num = parseFloat(ultimoGlobal.replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(num) && num > 0) return num;
+    }
+
     return null;
   } catch (e) {
     console.warn('No se pudo leer el PDF:', e);
