@@ -1120,7 +1120,7 @@ async function verDetalle(id) {
           <button type="button" class="btn" onclick="subirPresupuesto('${id}')">📎 Subir presupuesto</button>
           <button type="button" class="btn" onclick="subirFactura('${id}')">🧾 Subir factura</button>
         </div>
-        <p style="font-size:10.5px;color:var(--text3);margin-top:6px">Si aún no has elegido la carpeta de esta obra, te la pedirá primero. El archivo se guarda directamente en la carpeta del expediente.</p>
+        <p style="font-size:10.5px;color:var(--text3);margin-top:6px">Primero pulsa "Elegir carpeta y crear subcarpetas" arriba (una vez por expediente). Después estos botones te piden directamente el archivo y lo guardan en la carpeta del expediente.</p>
         <div id="archivo-status-${id}" style="margin-top:6px;font-size:12px"></div>
       </div>
     </div>
@@ -1268,17 +1268,12 @@ async function subirArchivo(id, subcarpeta) {
     statusEl.innerHTML = '<span style="color:#c0392b">Esta función solo está disponible en Chrome o Edge en ordenador.</span>';
     return;
   }
+  let dirHandle = carpetaHandles[id];
+  if (!dirHandle) {
+    statusEl.innerHTML = '<span style="color:#c0392b">Primero pulsa "📂 Elegir carpeta y crear subcarpetas" arriba, y después vuelve a pulsar este botón.</span>';
+    return;
+  }
   try {
-    let dirHandle = carpetaHandles[id];
-    if (!dirHandle) {
-      statusEl.textContent = 'Primero elige la carpeta del expediente en el explorador que se acaba de abrir...';
-      dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      carpetaHandles[id] = dirHandle;
-      // Nos aseguramos de que existan las 2 subcarpetas estándar por si aún no se habían creado
-      for (const sub of SUBCARPETAS_EXPEDIENTE) {
-        await dirHandle.getDirectoryHandle(sub, { create: true });
-      }
-    }
     const [fileHandle] = await window.showOpenFilePicker({
       multiple: false
     });
