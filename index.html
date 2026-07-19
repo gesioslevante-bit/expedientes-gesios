@@ -927,9 +927,10 @@ async function subirPresupuesto(id) {
   const importe = await extraerImportePDF(file);
   if (importe) {
     document.getElementById(`fac-importe-${id}`).value = importe.toFixed(2);
-    statusEl.innerHTML += ` 💶 Importe detectado: <b>${importe.toFixed(2)} €</b> (revisa y guarda abajo).`;
+    await guardarFacturacion(id);
+    statusEl.innerHTML += ` 💶 Importe detectado y guardado: <b>${importe.toFixed(2)} €</b>.`;
   } else {
-    statusEl.innerHTML += ' No se pudo leer el importe automáticamente — introdúcelo a mano abajo.';
+    statusEl.innerHTML += ' No se pudo leer el importe automáticamente — introdúcelo a mano abajo y pulsa "Guardar facturación".';
   }
 }
 
@@ -941,9 +942,12 @@ async function subirFactura(id) {
   const importe = await extraerImportePDF(file);
   if (importe) {
     document.getElementById(`fac-importe-${id}`).value = importe.toFixed(2);
-    statusEl.innerHTML += ` 💶 Importe detectado: <b>${importe.toFixed(2)} €</b> (revisa y guarda abajo).`;
+    const estadoSel = document.getElementById(`fac-estado-${id}`);
+    if (estadoSel && estadoSel.value === 'Pendiente') estadoSel.value = 'Facturado';
+    await guardarFacturacion(id);
+    statusEl.innerHTML += ` 💶 Importe detectado y guardado: <b>${importe.toFixed(2)} €</b> (estado: Facturado).`;
   } else {
-    statusEl.innerHTML += ' No se pudo leer el importe automáticamente — introdúcelo a mano abajo.';
+    statusEl.innerHTML += ' No se pudo leer el importe automáticamente — introdúcelo a mano abajo y pulsa "Guardar facturación".';
   }
 }
 
