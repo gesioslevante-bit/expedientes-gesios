@@ -209,6 +209,7 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
       <div class="nav-item" onclick="nav('expedientes')">🗂 Expedientes <span class="nav-badge" id="badge-exp">—</span></div>
       <div class="nav-item" onclick="nav('estados')">📅 Estados</div>
       <div class="nav-item" onclick="nav('facturacion')">💶 Facturación</div>
+      <div class="nav-item" onclick="nav('resumen')">📊 Resumen por estado</div>
       <div class="nav-item" onclick="nav('busqueda')">🔍 Buscar catastro</div>
     </div>
     <div class="nav-section" style="border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;margin-top:auto">
@@ -395,6 +396,16 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
             <div class="loading"><div class="spinner"></div>Cargando...</div>
           </div>
           <div id="facturacion-clientes"></div>
+        </div>
+      </div>
+
+      <!-- RESUMEN POR ESTADO -->
+      <div id="view-resumen" class="view">
+        <div class="card">
+          <div class="card-header">📊 <h2>Resumen por estado</h2>
+            <button class="btn" style="margin-left:auto" onclick="exportarResumenCSV()">⬇️ Exportar a CSV</button>
+          </div>
+          <div id="resumen-tabla" style="overflow-x:auto"><div class="loading"><div class="spinner"></div>Cargando...</div></div>
         </div>
       </div>
 
@@ -687,9 +698,9 @@ function editarExpediente(id) {
 // ── VISTAS ─────────────────────────────────────────
 const navTitles = {
   dashboard:'Resumen general', alta:'Nuevo expediente',
-  expedientes:'Expedientes', estados:'Estado de expedientes', facturacion:'Previsión de facturación', busqueda:'Buscar por referencia catastral', detalle:'Ficha de expediente'
+  expedientes:'Expedientes', estados:'Estado de expedientes', facturacion:'Previsión de facturación', resumen:'Resumen por estado', busqueda:'Buscar por referencia catastral', detalle:'Ficha de expediente'
 };
-const navOrder = ['dashboard','alta','expedientes','estados','facturacion','busqueda'];
+const navOrder = ['dashboard','alta','expedientes','estados','facturacion','resumen','busqueda'];
 
 function irANuevoExpediente() {
   editandoId = null;
@@ -719,6 +730,7 @@ function nav(s) {
   if (s === 'expedientes') cargarTablaExpedientes();
   if (s === 'estados') cargarEstadosPanel();
   if (s === 'facturacion') cargarFacturacionPanel();
+  if (s === 'resumen') cargarResumenPanel();
   if (s === 'alta') limpiarErrores();
 }
 
@@ -921,6 +933,20 @@ async function subirPresupuesto(id) {
   }
 }
 
+async function subirFactura(id) {
+  const statusEl = document.getElementById(`archivo-status-${id}`);
+  const file = await subirArchivo(id, '');
+  if (!file) return; // cancelado o error
+  statusEl.textContent += ' Leyendo importe de la factura...';
+  const importe = await extraerImportePDF(file);
+  if (importe) {
+    document.getElementById(`fac-importe-${id}`).value = importe.toFixed(2);
+    statusEl.innerHTML += ` 💶 Importe detectado: <b>${importe.toFixed(2)} €</b> (revisa y guarda abajo).`;
+  } else {
+    statusEl.innerHTML += ' No se pudo leer el importe automáticamente — introdúcelo a mano abajo.';
+  }
+}
+
 // ── PANEL DE FACTURACIÓN (previsión, agrupado por cliente) ─
 function fmtEUR(n) {
   return (n||0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
@@ -989,6 +1015,79 @@ function renderFacturacionPanel() {
   }).join('');
 }
 
+// ── RESUMEN POR ESTADO (vista tipo Excel) ──────────
+async function cargarResumenPanel() {
+  document.getElementById('resumen-tabla').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>';
+  await cargarExpedientes();
+  renderResumenPanel();
+}
+
+function renderResumenPanel() {
+  const porEstado = {};
+  ESTADOS_FASE.forEach(s => porEstado[s] = []);
+  expedientesCache.forEach(e => {
+    const st = ESTADOS_FASE.includes(e.Estado) ? e.Estado : 'SIN ESTADO';
+    (porEstado[st] = porEstado[st] || []).push(e);
+  });
+
+  let granTotal = 0, granCount = 0;
+  const bloques = Object.keys(porEstado).filter(s => porEstado[s].length).map(estado => {
+    const items = porEstado[estado];
+    const subtotal = items.reduce((s,e) => s + (e.Importe||0), 0);
+    granTotal += subtotal;
+    granCount += items.length;
+    const filas = items.map(e => `
+      <tr style="cursor:pointer" onclick="verDetalle('${e.id}')">
+        <td></td>
+        <td>${e.NumeroExpediente||'—'}</td>
+        <td>${e.Cliente||'—'}</td>
+        <td>${e.Municipio||'—'}</td>
+        <td style="text-align:right">${e.Importe!=null?fmtEUR(e.Importe):'—'}</td>
+      </tr>`).join('');
+    return `
+      <tr style="background:var(--bg)">
+        <td colspan="4" style="font-weight:600">${estado} <span style="font-weight:400;color:var(--text2)">(${items.length})</span></td>
+        <td style="text-align:right;font-weight:600">${fmtEUR(subtotal)}</td>
+      </tr>
+      ${filas}`;
+  }).join('');
+
+  document.getElementById('resumen-tabla').innerHTML = `
+    <table style="width:100%">
+      <thead><tr><th></th><th>Nº Expediente</th><th>Cliente</th><th>Municipio</th><th style="text-align:right">Importe</th></tr></thead>
+      <tbody>
+        ${bloques}
+        <tr style="border-top:2px solid var(--border)">
+          <td colspan="4" style="font-weight:700">TOTAL (${granCount} expedientes)</td>
+          <td style="text-align:right;font-weight:700">${fmtEUR(granTotal)}</td>
+        </tr>
+      </tbody>
+    </table>`;
+}
+
+function exportarResumenCSV() {
+  const porEstado = {};
+  ESTADOS_FASE.forEach(s => porEstado[s] = []);
+  expedientesCache.forEach(e => {
+    const st = ESTADOS_FASE.includes(e.Estado) ? e.Estado : 'SIN ESTADO';
+    (porEstado[st] = porEstado[st] || []).push(e);
+  });
+  let filas = [['Estado','Nº Expediente','Cliente','Municipio','Importe']];
+  Object.keys(porEstado).forEach(estado => {
+    const items = porEstado[estado];
+    if (!items.length) return;
+    const subtotal = items.reduce((s,e)=>s+(e.Importe||0),0);
+    items.forEach(e => filas.push([estado, e.NumeroExpediente||'', e.Cliente||'', e.Municipio||'', e.Importe!=null?e.Importe.toFixed(2).replace('.',','):'']));
+    filas.push([`SUBTOTAL ${estado}`,'','','',subtotal.toFixed(2).replace('.',',')]);
+  });
+  const csv = filas.map(f => f.map(c => `"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `resumen_expedientes_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
 async function verDetalle(id) {
   nav('detalle');
   const e = expedientesCache.find(x => x.id === id) || {};
@@ -1019,7 +1118,7 @@ async function verDetalle(id) {
         <div id="carpetas-status-${id}" style="margin-top:8px;font-size:12px"></div>
         <div style="display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft)">
           <button type="button" class="btn" onclick="subirPresupuesto('${id}')">📎 Subir presupuesto</button>
-          <button type="button" class="btn" onclick="subirArchivo('${id}','')">🧾 Subir factura</button>
+          <button type="button" class="btn" onclick="subirFactura('${id}')">🧾 Subir factura</button>
         </div>
         <p style="font-size:10.5px;color:var(--text3);margin-top:6px">Si aún no has elegido la carpeta de esta obra, te la pedirá primero. El archivo se guarda directamente en la carpeta del expediente.</p>
         <div id="archivo-status-${id}" style="margin-top:6px;font-size:12px"></div>
@@ -1181,9 +1280,7 @@ async function subirArchivo(id, subcarpeta) {
       }
     }
     const [fileHandle] = await window.showOpenFilePicker({
-      multiple: false,
-      excludeAcceptAllOption: false,
-      types: [{ description: 'Documentos', accept: { 'application/pdf': ['.pdf'], 'application/vnd.ms-excel': ['.xls'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 'image/*': ['.jpg','.jpeg','.png'] } }]
+      multiple: false
     });
     const file = await fileHandle.getFile();
     const destinoLabel = subcarpeta ? subcarpeta : `la carpeta del expediente`;
