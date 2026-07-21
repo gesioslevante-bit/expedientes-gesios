@@ -1152,6 +1152,10 @@ async function verDetalle(id) {
         </div>
         <p style="font-size:10.5px;color:var(--text3);margin-top:6px">Primero pulsa "Elegir carpeta y crear subcarpetas" arriba (una vez por expediente). Después estos botones te piden directamente el archivo y lo guardan en la carpeta del expediente.</p>
         <div id="archivo-status-${id}" style="margin-top:6px;font-size:12px"></div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-soft)">
+          <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">📁 Archivos</div>
+          <div id="lista-archivos-${id}"><div style="font-size:11px;color:var(--text2)">Cargando...</div></div>
+        </div>
       </div>
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
@@ -1180,6 +1184,7 @@ async function verDetalle(id) {
       <button class="btn" onclick="editarExpediente('${id}')">✏️ Editar expediente</button>
       <button class="btn" onclick="borrarExpediente('${id}','${(e.NumeroExpediente||'').replace(/'/g,"\\'")}');nav('expedientes')" style="color:var(--red,#dc2626)">🗑 Eliminar expediente</button>
     </div>`;
+  cargarListaArchivos(id);
 }
 
 async function borrarExpediente(id, numExp) {
@@ -1227,9 +1232,25 @@ async function guardarFacturacion(id) {
   const importe = importeStr === '' ? null : parseFloat(importeStr);
   try {
     await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${id}/fields`, { Importe: importe, EstadoFacturacion: estado });
+    // Verificación real: releemos el elemento para confirmar que SharePoint ha aplicado el cambio de verdad
+    const verif = await graph('GET', `/sites/${siteId}/lists/${listId}/items/${id}?$expand=fields`);
+    const fCampos = verif?.fields || {};
+    const importeOk = importe === null ? (fCampos.Importe == null) : Math.abs((fCampos.Importe||0) - importe) < 0.01;
+    const estadoOk = fCampos.EstadoFacturacion === estado;
     const exp = expedientesCache.find(e => e.id === id);
-    if (exp) { exp.Importe = importe; exp.EstadoFacturacion = estado; }
-    toast('✅ Facturación guardada', 'success');
+    if (exp) { exp.Importe = fCampos.Importe; exp.EstadoFacturacion = fCampos.EstadoFacturacion; }
+    // Reflejamos en el formulario lo que realmente ha quedado guardado (no lo que intentamos enviar)
+    const inputImporte = document.getElementById('fac-importe-'+id);
+    const selectEstado = document.getElementById('fac-estado-'+id);
+    if (inputImporte) inputImporte.value = fCampos.Importe != null ? fCampos.Importe : '';
+    if (selectEstado) selectEstado.value = fCampos.EstadoFacturacion || 'Pendiente';
+    if (importeOk && estadoOk) {
+      toast('✅ Facturación guardada', 'success');
+    } else if (!estadoOk) {
+      toast('⚠️ SharePoint no ha guardado el estado — revisa que la columna EstadoFacturacion sea de tipo texto, o que sus opciones coincidan exactamente con Pendiente/Facturado/Cobrado', 'error');
+    } else {
+      toast('⚠️ SharePoint no ha guardado el importe — revisa el tipo de la columna Importe', 'error');
+    }
   } catch(e) {
     toast('❌ Error: ' + e.message, 'error');
   }
@@ -1260,6 +1281,128 @@ function san(t) { return (t||'').trim().replace(/[\\/:*?"<>|]/g,'_'); }
 const SUBCARPETAS_EXPEDIENTE = ['ESTADO INICIAL','DURANTE Y FINAL'];
 const carpetaHandles = {}; // id expediente -> FileSystemDirectoryHandle elegido en esta sesión
 
+// ── PERSISTENCIA DE CARPETAS ENTRE SESIONES (IndexedDB) ─
+const DB_CARPETAS_NOMBRE = 'expedientesCarpetas';
+const DB_CARPETAS_STORE = 'handles';
+function abrirDBCarpetas() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_CARPETAS_NOMBRE, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(DB_CARPETAS_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function guardarHandleCarpeta(id, handle) {
+  try {
+    const db = await abrirDBCarpetas();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_CARPETAS_STORE, 'readwrite');
+      tx.objectStore(DB_CARPETAS_STORE).put(handle, id);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) { console.warn('No se pudo guardar la carpeta para la próxima sesión:', e); }
+}
+async function obtenerHandleCarpetaGuardado(id) {
+  try {
+    const db = await abrirDBCarpetas();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_CARPETAS_STORE, 'readonly');
+      const req = tx.objectStore(DB_CARPETAS_STORE).get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) { return null; }
+}
+
+// Intenta recuperar la carpeta guardada de sesiones anteriores sin pedir nada al usuario
+// (solo funciona si el navegador aún recuerda el permiso concedido)
+async function intentarRecuperarCarpeta(id) {
+  if (carpetaHandles[id]) return 'ok';
+  const handle = await obtenerHandleCarpetaGuardado(id);
+  if (!handle) return 'sin-guardar';
+  try {
+    const permiso = await handle.queryPermission({ mode: 'readwrite' });
+    if (permiso === 'granted') { carpetaHandles[id] = handle; return 'ok'; }
+    return 'necesita-permiso';
+  } catch (e) { return 'sin-guardar'; }
+}
+
+// Pide el permiso de nuevo (requiere que el usuario haya hecho clic en un botón)
+async function reconectarCarpeta(id) {
+  const handle = await obtenerHandleCarpetaGuardado(id);
+  if (!handle) { toast('No hay ninguna carpeta guardada para este expediente — usa "Elegir carpeta y crear subcarpetas"', 'error'); return; }
+  try {
+    const permiso = await handle.requestPermission({ mode: 'readwrite' });
+    if (permiso === 'granted') {
+      carpetaHandles[id] = handle;
+      toast('✅ Carpeta reconectada', 'success');
+      verDetalle(id);
+    } else {
+      toast('❌ Permiso denegado', 'error');
+    }
+  } catch (e) { toast('❌ Error: ' + e.message, 'error'); }
+}
+
+// Lista los archivos de la carpeta del expediente (raíz + subcarpetas)
+async function listarArchivosCarpeta(dirHandle) {
+  const archivos = [];
+  for await (const [nombre, handle] of dirHandle.entries()) {
+    if (handle.kind === 'file') archivos.push({ nombre, carpeta: '' });
+  }
+  for (const sub of SUBCARPETAS_EXPEDIENTE) {
+    try {
+      const subHandle = await dirHandle.getDirectoryHandle(sub);
+      for await (const [nombre, handle] of subHandle.entries()) {
+        if (handle.kind === 'file') archivos.push({ nombre, carpeta: sub });
+      }
+    } catch (e) { /* la subcarpeta no existe o no se puede leer */ }
+  }
+  return archivos;
+}
+
+// Abre un archivo de la carpeta del expediente en una pestaña nueva
+async function abrirArchivoCarpeta(id, nombre, carpeta) {
+  const dirHandle = carpetaHandles[id];
+  if (!dirHandle) { toast('❌ La carpeta no está conectada, reconéctala primero', 'error'); return; }
+  try {
+    const targetDir = carpeta ? await dirHandle.getDirectoryHandle(carpeta) : dirHandle;
+    const fileHandle = await targetDir.getFileHandle(nombre);
+    const file = await fileHandle.getFile();
+    const url = URL.createObjectURL(file);
+    window.open(url, '_blank');
+  } catch (e) { toast('❌ No se pudo abrir el archivo: ' + e.message, 'error'); }
+}
+
+// Renderiza la lista de archivos ya subidos dentro de la ficha del expediente
+async function cargarListaArchivos(id) {
+  const cont = document.getElementById(`lista-archivos-${id}`);
+  if (!cont) return;
+  const estado = await intentarRecuperarCarpeta(id);
+  if (estado === 'sin-guardar') {
+    cont.innerHTML = '<div style="font-size:11px;color:var(--text2)">Aún no has elegido la carpeta de este expediente.</div>';
+    return;
+  }
+  if (estado === 'necesita-permiso') {
+    cont.innerHTML = '<button type="button" class="btn" onclick="reconectarCarpeta(\''+id+'\')">🔓 Reconectar carpeta para ver los archivos</button>';
+    return;
+  }
+  cont.innerHTML = '<div style="font-size:11px;color:var(--text2)">Cargando archivos...</div>';
+  try {
+    const archivos = await listarArchivosCarpeta(carpetaHandles[id]);
+    if (!archivos.length) {
+      cont.innerHTML = '<div style="font-size:11px;color:var(--text2)">Todavía no hay archivos en la carpeta.</div>';
+      return;
+    }
+    cont.innerHTML = archivos.map(a => `
+      <div style="cursor:pointer;font-size:12px;color:var(--blue-dark);text-decoration:underline;margin-bottom:3px" onclick="abrirArchivoCarpeta('${id}','${a.nombre.replace(/'/g,"\\'")}','${a.carpeta}')">📄 ${a.nombre}${a.carpeta?' <span style="color:var(--text2);text-decoration:none">('+a.carpeta+')</span>':''}</div>
+    `).join('');
+  } catch (e) {
+    cont.innerHTML = '<div style="font-size:11px;color:#c0392b">No se pudo leer la carpeta.</div>';
+  }
+}
+
+
 async function elegirYCrearCarpetas(id) {
   const statusEl = document.getElementById(`carpetas-status-${id}`);
   if (!window.showDirectoryPicker) {
@@ -1274,6 +1417,7 @@ async function elegirYCrearCarpetas(id) {
       await dirHandle.getDirectoryHandle(sub, { create: true });
     }
     carpetaHandles[id] = dirHandle;
+    await guardarHandleCarpeta(id, dirHandle);
     statusEl.innerHTML = `✅ Subcarpetas creadas dentro de "<b>${dirHandle.name}</b>".`;
     toast(`✅ Carpetas creadas dentro de "${dirHandle.name}"`, 'success');
     try {
@@ -1300,8 +1444,14 @@ async function subirArchivo(id, subcarpeta) {
   }
   let dirHandle = carpetaHandles[id];
   if (!dirHandle) {
-    statusEl.innerHTML = '<span style="color:#c0392b">Primero pulsa "📂 Elegir carpeta y crear subcarpetas" arriba, y después vuelve a pulsar este botón.</span>';
-    return;
+    const estado = await intentarRecuperarCarpeta(id);
+    dirHandle = carpetaHandles[id];
+    if (!dirHandle) {
+      statusEl.innerHTML = estado === 'necesita-permiso'
+        ? '<span style="color:#c0392b">Pulsa "🔓 Reconectar carpeta" en la sección de archivos de abajo, y después vuelve a pulsar este botón.</span>'
+        : '<span style="color:#c0392b">Primero pulsa "📂 Elegir carpeta y crear subcarpetas" arriba, y después vuelve a pulsar este botón.</span>';
+      return;
+    }
   }
   try {
     const [fileHandle] = await window.showOpenFilePicker({
@@ -1317,6 +1467,7 @@ async function subirArchivo(id, subcarpeta) {
     await writable.close();
     statusEl.innerHTML = `✅ "<b>${file.name}</b>" guardado en ${destinoLabel}.`;
     toast(`✅ Archivo guardado en ${destinoLabel}`, 'success');
+    cargarListaArchivos(id);
     return file;
   } catch (err) {
     if (err.name === 'AbortError') {
