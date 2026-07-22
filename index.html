@@ -1463,13 +1463,15 @@ async function subirArchivo(id, subcarpeta) {
     const [fileHandle] = await window.showOpenFilePicker({
       multiple: false
     });
-    const file = await fileHandle.getFile();
+    const fileOriginal = await fileHandle.getFile();
+    const bytes = await fileOriginal.arrayBuffer(); // leemos el contenido ya, antes de que la referencia se invalide
+    const file = new File([bytes], fileOriginal.name, { type: fileOriginal.type });
     const destinoLabel = subcarpeta ? subcarpeta : `la carpeta del expediente`;
     statusEl.textContent = `Copiando "${file.name}" a ${destinoLabel}...`;
     const targetHandle = subcarpeta ? await dirHandle.getDirectoryHandle(subcarpeta, { create: true }) : dirHandle;
     const destHandle = await targetHandle.getFileHandle(file.name, { create: true });
     const writable = await destHandle.createWritable();
-    await writable.write(file);
+    await writable.write(bytes);
     await writable.close();
     statusEl.innerHTML = `✅ "<b>${file.name}</b>" guardado en ${destinoLabel}.`;
     toast(`✅ Archivo guardado en ${destinoLabel}`, 'success');
