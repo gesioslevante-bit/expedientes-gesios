@@ -178,8 +178,8 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
 .spinner{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js"></script>
-<script>if (window['pdfjsLib']) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if (window['pdfjsLib']) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 </head>
 <body>
 
@@ -1230,6 +1230,12 @@ async function guardarFacturacion(id) {
   const importeStr = document.getElementById('fac-importe-'+id).value;
   const estado = document.getElementById('fac-estado-'+id).value;
   const importe = importeStr === '' ? null : parseFloat(importeStr);
+  const expActual = expedientesCache.find(e => e.id === id);
+  if (importe === null && expActual && expActual.Importe != null) {
+    if (!confirm(`El importe ya guardado es ${expActual.Importe} €. El campo está vacío ahora mismo — si continúas, se borrará ese importe. ¿Seguro que quieres continuar?`)) {
+      return;
+    }
+  }
   try {
     await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${id}/fields`, { Importe: importe, EstadoFacturacion: estado });
     // Verificación real: releemos el elemento para confirmar que SharePoint ha aplicado el cambio de verdad
