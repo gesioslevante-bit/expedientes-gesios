@@ -1404,7 +1404,10 @@ async function cargarListaArchivos(id) {
       <div style="cursor:pointer;font-size:12px;color:var(--blue-dark);text-decoration:underline;margin-bottom:3px" onclick="abrirArchivoCarpeta('${id}','${a.nombre.replace(/'/g,"\\'")}','${a.carpeta}')">📄 ${a.nombre}${a.carpeta?' <span style="color:var(--text2);text-decoration:none">('+a.carpeta+')</span>':''}</div>
     `).join('');
   } catch (e) {
-    cont.innerHTML = '<div style="font-size:11px;color:#c0392b">No se pudo leer la carpeta.</div>';
+    const esReferenciaCaducada = e.name === 'InvalidStateError' || /state.*cached|cached.*state/i.test(e.message || '');
+    cont.innerHTML = esReferenciaCaducada
+      ? '<button type="button" class="btn" onclick="reconectarCarpeta(\''+id+'\')">🔓 La conexión con la carpeta caducó — pulsa para reconectar</button>'
+      : '<div style="font-size:11px;color:#c0392b">No se pudo leer la carpeta.</div>';
   }
 }
 
@@ -1459,31 +1462,58 @@ async function subirArchivo(id, subcarpeta) {
       return;
     }
   }
+  let fileHandle;
   try {
-    const [fileHandle] = await window.showOpenFilePicker({
-      multiple: false
-    });
-    const fileOriginal = await fileHandle.getFile();
-    const bytes = await fileOriginal.arrayBuffer(); // leemos el contenido ya, antes de que la referencia se invalide
-    const file = new File([bytes], fileOriginal.name, { type: fileOriginal.type });
-    const destinoLabel = subcarpeta ? subcarpeta : `la carpeta del expediente`;
-    statusEl.textContent = `Copiando "${file.name}" a ${destinoLabel}...`;
-    const targetHandle = subcarpeta ? await dirHandle.getDirectoryHandle(subcarpeta, { create: true }) : dirHandle;
+    [fileHandle] = await window.showOpenFilePicker({ multiple: false });
+  } catch (err) {
+    if (err.name === 'AbortError') statusEl.textContent = 'Cancelado, no se ha subido nada.';
+    else statusEl.innerHTML = `<span style="color:#c0392b">Error: ${err.message}</span>`;
+    return;
+  }
+  const fileOriginal = await fileHandle.getFile();
+  const bytes = await fileOriginal.arrayBuffer(); // leemos el contenido ya, antes de que la referencia se invalide
+  const file = new File([bytes], fileOriginal.name, { type: fileOriginal.type });
+  const destinoLabel = subcarpeta ? subcarpeta : `la carpeta del expediente`;
+  statusEl.textContent = `Copiando "${file.name}" a ${destinoLabel}...`;
+
+  async function guardarEn(handle) {
+    const targetHandle = subcarpeta ? await handle.getDirectoryHandle(subcarpeta, { create: true }) : handle;
     const destHandle = await targetHandle.getFileHandle(file.name, { create: true });
     const writable = await destHandle.createWritable();
     await writable.write(bytes);
     await writable.close();
-    statusEl.innerHTML = `✅ "<b>${file.name}</b>" guardado en ${destinoLabel}.`;
-    toast(`✅ Archivo guardado en ${destinoLabel}`, 'success');
-    cargarListaArchivos(id);
-    return file;
+  }
+
+  try {
+    await guardarEn(dirHandle);
   } catch (err) {
-    if (err.name === 'AbortError') {
-      statusEl.textContent = 'Cancelado, no se ha subido nada.';
-    } else {
-      statusEl.innerHTML = `<span style="color:#c0392b">Error: ${err.message}</span>`;
+    // La referencia a la carpeta guardada de otra sesión se ha quedado desactualizada
+    // respecto al disco real (típico en carpetas de unidades de red como Z:).
+    // En vez de fallar, pedimos la carpeta otra vez y reintentamos una sola vez.
+    const esReferenciaCaducada = err.name === 'InvalidStateError' || /state.*cached|cached.*state/i.test(err.message || '');
+    if (!esReferenciaCaducada) {
+      if (err.name === 'AbortError') statusEl.textContent = 'Cancelado, no se ha subido nada.';
+      else statusEl.innerHTML = `<span style="color:#c0392b">Error: ${err.message}</span>`;
+      return;
+    }
+    statusEl.innerHTML = 'La conexión con la carpeta se quedó desactualizada. Elige otra vez la carpeta del expediente en el explorador que se acaba de abrir...';
+    try {
+      const dirHandleNuevo = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await guardarEn(dirHandleNuevo);
+      dirHandle = dirHandleNuevo;
+      carpetaHandles[id] = dirHandleNuevo;
+      await guardarHandleCarpeta(id, dirHandleNuevo);
+    } catch (err2) {
+      if (err2.name === 'AbortError') { statusEl.textContent = 'Cancelado, no se ha subido nada.'; return; }
+      statusEl.innerHTML = `<span style="color:#c0392b">Error: ${err2.message}</span>`;
+      return;
     }
   }
+
+  statusEl.innerHTML = `✅ "<b>${file.name}</b>" guardado en ${destinoLabel}.`;
+  toast(`✅ Archivo guardado en ${destinoLabel}`, 'success');
+  cargarListaArchivos(id);
+  return file;
 }
 
 // ── CARPETA CONOCIDA (lista fija de carpetas reales en Z:\DATOS\) ──
