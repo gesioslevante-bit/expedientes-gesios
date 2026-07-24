@@ -281,7 +281,7 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
               <h3><span>🗺</span> Referencia catastral</h3>
               <div class="field-row">
                 <div class="field" id="field-ref" style="flex:1">
-                  <label>Referencia/s catastral/es <span class="req">*</span></label>
+                  <label>Referencia/s catastral/es</label>
                   <div id="refs-container">
                     <div class="ref-row" style="display:flex;gap:6px;margin-bottom:6px">
                       <input type="text" class="f-ref-item" placeholder="Ej: 46230A006000380000XJ" oninput="actualizar()" style="font-family:monospace;font-size:12px;flex:1">
@@ -1579,12 +1579,10 @@ function validar() {
   const c = document.getElementById('f-cliente').value.trim();
   const d = document.getElementById('f-desc').value.trim();
   const m = document.getElementById('f-muni').value.trim();
-  const r = getRefs().length;
   if (!n) { marcarError('field-num'); err++; }
   if (!c) { marcarError('field-cliente'); err++; }
   if (!d) { marcarError('field-desc'); err++; }
   if (!m) { marcarError('field-muni'); err++; }
-  if (!r) { marcarError('field-ref'); err++; }
   if (err > 0) {
     document.getElementById('validacion-msg').style.display = 'inline-flex';
     document.getElementById('field-num').scrollIntoView({behavior:'smooth',block:'center'});
@@ -1622,6 +1620,23 @@ function toast(msg, tipo) {
   t.className = `toast show ${tipo||''}`;
   setTimeout(() => t.className = 'toast', 4000);
 }
+
+// ── Navegar entre campos del formulario "Nuevo expediente" con Intro ──
+document.getElementById('view-alta').addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter') return;
+  const tag = e.target.tagName;
+  if (tag === 'TEXTAREA' || tag === 'BUTTON') return; // en notas, Intro hace salto de línea normal
+  if (tag !== 'INPUT' && tag !== 'SELECT') return;
+  e.preventDefault();
+  const focusables = Array.from(this.querySelectorAll('input, select, textarea'))
+    .filter(el => !el.disabled && el.offsetParent !== null);
+  const idx = focusables.indexOf(e.target);
+  if (idx > -1 && idx < focusables.length - 1) {
+    const siguiente = focusables[idx + 1];
+    siguiente.focus();
+    if (siguiente.select) siguiente.select();
+  }
+});
 
 init();
 </script>
