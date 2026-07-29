@@ -271,7 +271,7 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
                 </label>
               </div>
               <div class="field" id="field-desc">
-                <label>Descripción de la obra <span class="req">*</span></label>
+                <label>Descripción de la obra</label>
                 <input type="text" id="f-desc" placeholder="Ej: Desbroce parcela calle Mayor" oninput="actualizar()">
                 <div class="error-msg">Introduce una descripción</div>
               </div>
@@ -1594,11 +1594,9 @@ function validar() {
   let err = 0;
   const n = document.getElementById('f-num').value.trim();
   const c = document.getElementById('f-cliente').value.trim();
-  const d = document.getElementById('f-desc').value.trim();
   const m = document.getElementById('f-muni').value.trim();
   if (!n) { marcarError('field-num'); err++; }
   if (!c) { marcarError('field-cliente'); err++; }
-  if (!d) { marcarError('field-desc'); err++; }
   if (!m) { marcarError('field-muni'); err++; }
   if (err > 0) {
     document.getElementById('validacion-msg').style.display = 'inline-flex';
