@@ -381,7 +381,7 @@ input[type="checkbox"]{width:16px!important;height:16px;accent-color:var(--blue)
               <button class="btn" onclick="calMesAnterior()">← Mes anterior</button>
               <div id="cal-mes-titulo" style="font-weight:600;font-size:13px;min-width:150px;text-align:center">—</div>
               <button class="btn" onclick="calMesSiguiente()">Mes siguiente →</button>
-              <div style="margin-left:auto;font-size:11px;color:var(--text2)">Solo se muestran expedientes en fase AGENDADA</div>
+              <div style="margin-left:auto;font-size:11px;color:var(--text2)">Solo se muestran expedientes marcados como Aprobado</div>
             </div>
             <div id="calendario-estados" style="padding:0 16px 16px"></div>
           </div>
@@ -767,7 +767,7 @@ function tablaExpedientesHTML(exps) {
     };
     return `<span class="badge ${m[e]||'b-gray'}">${e||'—'}</span>`;
   };
-  return `<table><thead><tr><th>Nº</th><th>Cliente</th><th>Descripción</th><th>Ref. catastral</th><th>Estado</th><th>Alta</th><th>Carpetas</th><th></th></tr></thead>
+  return `<table><thead><tr><th>Nº</th><th>Cliente</th><th>Descripción</th><th>Ref. catastral</th><th>Estado</th><th>Alta</th><th>Población</th><th></th></tr></thead>
   <tbody>${exps.map(e=>`<tr>
     <td><strong>${e.NumeroExpediente||'—'}</strong></td>
     <td>${e.Cliente||'—'}</td>
@@ -775,7 +775,7 @@ function tablaExpedientesHTML(exps) {
     <td style="font-family:monospace;font-size:11px">${e.RefCatastral||'—'}</td>
     <td>${badgeEstado(e.Estado)}</td>
     <td>${e.FechaAlta?e.FechaAlta.split('T')[0]:'—'}</td>
-    <td>${e.CarpetasCreadas?'<span class="badge b-green">✓ Creadas</span>':'<span class="badge b-amber">⏳ Pendiente</span>'}</td>
+    <td>${e.Municipio||'—'}</td>
     <td>
       <button class="row-act" onclick="verDetalle('${e.id}')">👁</button>
       <button class="row-act" onclick="editarExpediente('${e.id}')" title="Editar">✏️</button>
@@ -841,7 +841,7 @@ function calMesAnterior() { calMesActual = new Date(calMesActual.getFullYear(), 
 function calMesSiguiente() { calMesActual = new Date(calMesActual.getFullYear(), calMesActual.getMonth()+1, 1); renderEstadosPanel(); }
 
 function renderCalendarioEstados(exps) {
-  const agendados = exps.filter(e => e.Estado === 'AGENDADA' && e.FechaInicioEjecucion);
+  const agendados = exps.filter(e => e.Aprobado && e.FechaInicioEjecucion);
   const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   document.getElementById('cal-mes-titulo').textContent = `${meses[calMesActual.getMonth()]} ${calMesActual.getFullYear()}`;
 
@@ -1128,7 +1128,11 @@ async function verDetalle(id) {
   }).join('');
   document.getElementById('detalle-card').innerHTML = `
     <div class="card-header">📂 <h2>${e.NumeroExpediente||'—'} — ${e.Descripcion||'—'}</h2>
-      <span class="badge b-blue">${e.Estado||'—'}</span></div>
+      <span class="badge b-blue">${e.Estado||'—'}</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;margin-left:auto;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="chk-aprobado-${id}" ${e.Aprobado?'checked':''} onchange="toggleAprobado('${id}', this.checked)" style="width:auto">
+        ✅ Aprobado
+      </label></div>
     <div class="detalle-grid">
       <div class="det-field"><label>Cliente</label><p>${e.Cliente||'—'}</p></div>
       <div class="det-field"><label>Ref. catastral</label><p style="font-family:monospace;font-size:12px">${(e.RefCatastral||'').split(';').map(x=>x.trim()).filter(Boolean).map(r=>`<a href="#" onclick="abrirCatastroRef('${r.replace(/'/g,"\\'")}');return false;" style="color:var(--blue-dark)">${r}</a>`).join('<br>') || '—'}</p></div>
@@ -1160,7 +1164,7 @@ async function verDetalle(id) {
     </div>
     <div style="padding:0 16px 8px;font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Cambiar estado</div>
     <div class="fases-row">${fasesHTML}</div>
-    ${['AGENDADA','EN EJECUCION','FINALIZADA','FACTURADA','COBRADA'].includes(e.Estado)?`
+    ${e.Aprobado?`
     <div style="padding:14px 16px;border-top:1px solid var(--border-soft)">
       <div style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">📅 Fecha de ejecución (para el calendario)</div>
       <div class="field-row">
@@ -1197,6 +1201,19 @@ async function borrarExpediente(id, numExp) {
     toast('🗑 Expediente eliminado', 'success');
   } catch(e) {
     toast('❌ Error al eliminar: ' + e.message, 'error');
+  }
+}
+
+async function toggleAprobado(id, valor) {
+  try {
+    await graph('PATCH', `/sites/${siteId}/lists/${listId}/items/${id}/fields`, { Aprobado: valor });
+    const exp = expedientesCache.find(e => e.id === id);
+    if (exp) exp.Aprobado = valor;
+    toast(valor ? '✅ Marcado como aprobado' : 'Desmarcado como aprobado', 'success');
+    verDetalle(id);
+  } catch(e) {
+    toast('❌ Error: ' + e.message, 'error');
+    document.getElementById('chk-aprobado-'+id).checked = !valor;
   }
 }
 
